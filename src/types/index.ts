@@ -36,6 +36,15 @@ export interface Goal {
   createdAt: Date;
 }
 
+export interface GoalTransaction {
+  _id: string;
+  goalId: string;
+  amount: number;
+  type: 'deposit' | 'withdraw';
+  description?: string;
+  date: Date;
+}
+
 export interface Budget {
   _id: string;
   category: string;

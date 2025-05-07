@@ -4,11 +4,12 @@ import {
   View, 
   Text, 
   StyleSheet, 
-  ScrollView, 
+  FlatList, 
   TouchableOpacity, 
+  ScrollView, 
+  Alert, 
   ActivityIndicator,
-  RefreshControl,
-  Alert
+  RefreshControl
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
@@ -400,6 +401,9 @@ const Home = () => {
           <View style={styles.section}>
             <View style={styles.sectionHeader}>
               <Text style={[styles.sectionTitle, { color: colors.text }]}>Previsão Financeira</Text>
+              <TouchableOpacity onPress={() => navigation.navigate('PrevisaoFinanceira')}>
+                <Text style={[styles.viewAllText, { color: colors.primary }]}>Ver Detalhes</Text>
+              </TouchableOpacity>
             </View>
             
             <View style={[styles.forecastCard, { backgroundColor: colors.card, borderColor: colors.border }]}>
@@ -511,7 +515,10 @@ const Home = () => {
                 <TransactionItem
                   key={transaction._id}
                   transaction={transaction}
-                  onPress={() => navigation.navigate('EditTransaction', { transactionId: transaction._id })}
+                  onPress={() => {
+                    console.log('Navegando para EditTransaction com ID:', transaction._id);
+                    navigation.navigate('EditTransaction', { transactionId: transaction._id });
+                  }}
                   colors={colors}
                 />
               ))

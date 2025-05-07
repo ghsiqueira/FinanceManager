@@ -550,32 +550,35 @@ const PrevisaoFinanceira = () => {
               />
             ) : (
               <BarChart
-                      data={getChartData()}
-                      width={screenWidth - 40}
-                      height={220}
-                      chartConfig={{
-                        backgroundColor: colors.card,
-                        backgroundGradientFrom: colors.card,
-                        backgroundGradientTo: colors.card,
-                        decimalPlaces: 0,
-                        color: (opacity = 1) => {
-                          if (activeTab === 'balance' || activeTab === 'accumulated') {
-                            return getChartData().datasets[0].data[getChartData().datasets[0].data.length - 1] >= 0
-                              ? colors.success
-                              : colors.danger;
-                          }
-                          return activeTab === 'income' ? colors.success : colors.danger;
-                        },
-                        labelColor: (opacity = 1) => colors.text,
-                        style: {
-                          borderRadius: 16,
-                        },
-                      }}
-                      style={{
-                        marginVertical: 8,
-                        borderRadius: 16,
-                      }}
-                      fromZero yAxisLabel={''} yAxisSuffix={''}              />
+                data={getChartData()}
+                width={screenWidth - 40}
+                height={220}
+                chartConfig={{
+                  backgroundColor: colors.card,
+                  backgroundGradientFrom: colors.card,
+                  backgroundGradientTo: colors.card,
+                  decimalPlaces: 0,
+                  color: (opacity = 1) => {
+                    if (activeTab === 'balance' || activeTab === 'accumulated') {
+                      return getChartData().datasets[0].data[getChartData().datasets[0].data.length - 1] >= 0
+                        ? colors.success
+                        : colors.danger;
+                    }
+                    return activeTab === 'income' ? colors.success : colors.danger;
+                  },
+                  labelColor: (opacity = 1) => colors.text,
+                  style: {
+                    borderRadius: 16,
+                  },
+                }}
+                style={{
+                  marginVertical: 8,
+                  borderRadius: 16,
+                }}
+                fromZero 
+                yAxisLabel={''} 
+                yAxisSuffix={''}
+              />
             )}
           </View>
 
@@ -674,13 +677,49 @@ const PrevisaoFinanceira = () => {
                     <Text style={[styles.breakdownTitle, { color: colors.text }]}>
                       Fixo vs. Variável
                     </Text>
-                    <View style={styles.fixedVsVariableRow}>
+                    <View style={styles.fixedVsVariableGrid}>
                       <View style={styles.fixedVsVariableColumn}>
                         <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
                           Receitas Fixas
                         </Text>
                         <Text style={[styles.fixedVsVariableValue, { color: colors.success }]}>
                           {formatCurrency(item.fixedIncome)}
+                        </Text>
+                        <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
+                          {(item.fixedIncome / item.totalIncome * 100).toFixed(0)}%
+                        </Text>
+                      </View>
+
+                      <View style={styles.fixedVsVariableColumn}>
+                        <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
+                          Receitas Variáveis
+                        </Text>
+                        <Text style={[styles.fixedVsVariableValue, { color: colors.success }]}>
+                          {formatCurrency(item.variableIncome)}
+                        </Text>
+                        <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
+                          {(item.variableIncome / item.totalIncome * 100).toFixed(0)}%
+                        </Text>
+                      </View>
+
+                      <View style={styles.fixedVsVariableColumn}>
+                        <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
+                          Despesas Fixas
+                        </Text>
+                        <Text style={[styles.fixedVsVariableValue, { color: colors.danger }]}>
+                          {formatCurrency(item.fixedExpense)}
+                        </Text>
+                        <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
+                          {(item.fixedExpense / item.totalExpense * 100).toFixed(0)}%
+                        </Text>
+                      </View>
+
+                      <View style={styles.fixedVsVariableColumn}>
+                        <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
+                          Despesas Variáveis
+                        </Text>
+                        <Text style={[styles.fixedVsVariableValue, { color: colors.danger }]}>
+                          {formatCurrency(item.variableExpense)}
                         </Text>
                         <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
                           {(item.variableExpense / item.totalExpense * 100).toFixed(0)}%
@@ -933,13 +972,15 @@ const styles = StyleSheet.create({
   fixedVsVariableContainer: {
     marginBottom: 16,
   },
-  fixedVsVariableRow: {
+  fixedVsVariableGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 8,
+    flexWrap: 'wrap',
+    marginHorizontal: -8,
   },
   fixedVsVariableColumn: {
-    flex: 1,
+    width: '50%',
+    paddingHorizontal: 8,
+    marginBottom: 12,
   },
   fixedVsVariableLabel: {
     fontSize: 12,

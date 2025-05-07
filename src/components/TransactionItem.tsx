@@ -50,10 +50,22 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, colors, 
 
   const { name, color } = getCategoryIcon(transaction.category);
 
+  // Verificação de segurança para a função onPress
+  const handlePress = () => {
+    if (onPress && typeof onPress === 'function') {
+      // Assegurando que onPress é uma função
+      console.log('TransactionItem - Navegando para EditTransaction', transaction._id);
+      onPress();
+    } else {
+      console.error('TransactionItem - Função onPress não fornecida ou inválida');
+    }
+  };
+
   return (
     <TouchableOpacity 
       style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]} 
-      onPress={onPress}
+      onPress={handlePress}  // Usando a função handlePress com verificação
+      activeOpacity={0.7}    // Feedback visual melhorado
     >
       <View style={[styles.iconContainer, { backgroundColor: color + '20' }]}>
         <Ionicons name={name as any} size={20} color={color} />

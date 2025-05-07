@@ -31,6 +31,7 @@ import AddInvestment from '../screens/AddInvestment';
 import InvestmentDetail from '../screens/InvestmentDetail';
 import AddInvestmentTransaction from '../screens/AddInvestmentTransaction';
 
+// Novas telas
 import EditGoal from '../screens/EditGoal';
 import EditProfile from '../screens/EditProfile';
 import PrevisaoFinanceira from '../screens/PrevisaoFinanceira';
@@ -74,7 +75,6 @@ const AppNavigator = () => {
       <NavigationContainer theme={customTheme}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isAuthenticated ? (
-            // Rotas autenticadas
             <>
               <Stack.Screen name="Home" component={Home} />
               <Stack.Screen name="AddTransaction" component={AddTransaction} />
@@ -82,7 +82,7 @@ const AppNavigator = () => {
               <Stack.Screen name="Goals" component={Goals} />
               <Stack.Screen name="AddGoal" component={AddGoal} />
               <Stack.Screen name="GoalDetail" component={GoalDetail} />
-              <Stack.Screen name="EditGoal" component={EditGoal} /> {/* Nova rota */}
+              <Stack.Screen name="EditGoal" component={EditGoal} />
               <Stack.Screen name="Budgets" component={Budgets} />
               <Stack.Screen name="AddBudget" component={AddBudget} />
               <Stack.Screen name="EditBudget" component={EditBudget} />
@@ -91,11 +91,10 @@ const AppNavigator = () => {
               <Stack.Screen name="InvestmentDetail" component={InvestmentDetail} />
               <Stack.Screen name="AddInvestmentTransaction" component={AddInvestmentTransaction} />
               <Stack.Screen name="Settings" component={Settings} />
-              <Stack.Screen name="EditProfile" component={EditProfile} /> {/* Nova rota */}
-              <Stack.Screen name="PrevisaoFinanceira" component={PrevisaoFinanceira} /> {/* Nova rota */}
+              <Stack.Screen name="EditProfile" component={EditProfile} />
+              <Stack.Screen name="PrevisaoFinanceira" component={PrevisaoFinanceira} />
             </>
           ) : (
-            // Rotas não autenticadas
             <>
               <Stack.Screen name="Login" component={Login} />
               <Stack.Screen name="Register" component={Register} />

@@ -5,17 +5,15 @@ import {
   Text, 
   StyleSheet, 
   TouchableOpacity, 
-  Alert, 
-  ActivityIndicator,
-  ScrollView,
-  TextInput,
-  Modal
+  ScrollView, 
+  Alert,
+  ActivityIndicator
 } from 'react-native';
 import { useNavigation, useRoute, RouteProp } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
-import { Goal } from '../types';
+import { Goal, GoalTransaction } from '../types';
 import { RootStackParamList } from '../types/navigation';
 import api from '../services/api';
 
@@ -28,114 +26,64 @@ const GoalDetail = () => {
   const { colors } = useTheme();
   
   const [goal, setGoal] = useState<Goal | null>(null);
+  const [transactions, setTransactions] = useState<GoalTransaction[]>([]);
   const [loading, setLoading] = useState(true);
-  
-  const [showUpdateModal, setShowUpdateModal] = useState(false);
-  const [updateAmount, setUpdateAmount] = useState('');
-  const [updateType, setUpdateType] = useState<'add' | 'set'>('add');
-  
+
+  // Pegar o goalId da rota
   const { goalId } = route.params;
 
-  const fetchGoal = async () => {
+  useEffect(() => {
+    fetchGoalData();
+  }, [goalId]);
+
+  const fetchGoalData = async () => {
+    setLoading(true);
     try {
-      setLoading(true);
-      const res = await api.get(`/api/goals/${goalId}`);
-      setGoal(res.data);
+      const goalRes = await api.get(`/api/goals/${goalId}`);
+      setGoal(goalRes.data);
+      
+      const transactionsRes = await api.get(`/api/goals/${goalId}/history`);
+      setTransactions(transactionsRes.data);
     } catch (error) {
-      console.error('Erro ao buscar meta:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os detalhes da meta.');
-      navigation.goBack();
+      console.error('Erro ao buscar dados da meta:', error);
+      Alert.alert('Erro', 'Não foi possível carregar os dados da meta.');
     } finally {
       setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchGoal();
-  }, [goalId]);
-
-  const calculateProgress = (currentAmount: number, targetAmount: number) => {
-    return Math.min(Math.max((currentAmount / targetAmount) * 100, 0), 100);
   };
 
   const formatCurrency = (value: number) => {
     return `R$ ${value.toFixed(2)}`;
   };
 
-  const formatDate = (date: Date) => {
-    const d = new Date(date);
-    return d.toLocaleDateString('pt-BR');
+  const formatDate = (date: Date | string) => {
+    return new Date(date).toLocaleDateString('pt-BR');
   };
 
-  const calculateMonthlyAmount = () => {
+  const calculateProgress = () => {
     if (!goal) return 0;
-    
-    const today = new Date();
-    const targetDate = new Date(goal.targetDate);
-    
-    // Calcular meses entre hoje e a data alvo
-    const months = (targetDate.getFullYear() - today.getFullYear()) * 12 + 
-      (targetDate.getMonth() - today.getMonth());
-    
-    if (months <= 0) return 0;
-    
-    // Calcular valor mensal necessário
-    const remaining = goal.targetAmount - goal.currentAmount;
-    return remaining / months;
+    return Math.min(Math.max((goal.currentAmount / goal.targetAmount) * 100, 0), 100);
   };
 
-  const calculateDaysRemaining = () => {
-    if (!goal) return 0;
-    
-    const today = new Date();
-    const targetDate = new Date(goal.targetDate);
-    
-    const diffTime = targetDate.getTime() - today.getTime();
-    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-    
-    return diffDays;
+  const addTransaction = () => {
+    // Navegar para uma tela de adicionar transação à meta
+    // Esta funcionalidade pode ser implementada posteriormente
+    Alert.alert(
+      'Adicionar Transação',
+      'Funcionalidade em desenvolvimento',
+      [{ text: 'OK' }]
+    );
   };
 
-  const handleUpdateAmount = async () => {
-    if (!goal) return;
-    
-    const parsedAmount = parseFloat(updateAmount.replace(',', '.'));
-    
-    if (isNaN(parsedAmount) || parsedAmount <= 0) {
-      Alert.alert('Erro', 'Insira um valor válido');
-      return;
-    }
-    
-    try {
-      let newAmount = 0;
-      
-      if (updateType === 'add') {
-        newAmount = goal.currentAmount + parsedAmount;
-      } else { // set
-        newAmount = parsedAmount;
-      }
-      
-      // Garantir que o valor não ultrapasse a meta
-      if (!goal.isExpense && newAmount > goal.targetAmount) {
-        newAmount = goal.targetAmount;
-      }
-      
-      await api.put(`/api/goals/${goalId}`, {
-        currentAmount: newAmount
-      });
-      
-      setShowUpdateModal(false);
-      setUpdateAmount('');
-      fetchGoal();
-      
-      Alert.alert('Sucesso', 'Valor atualizado com sucesso!');
-    } catch (error) {
-      console.error('Erro ao atualizar meta:', error);
-      Alert.alert('Erro', 'Não foi possível atualizar o valor.');
+  const editGoal = () => {
+    if (goal) {
+      // Destacando a navegação para a tela de edição
+      console.log('Navegando para EditGoal com ID:', goalId);
+      navigation.navigate('EditGoal', { goalId: goal._id });
     }
   };
 
-  const handleDeleteGoal = () => {
+  const deleteGoal = () => {
     Alert.alert(
       'Confirmar Exclusão',
       'Tem certeza que deseja excluir esta meta? Esta ação não pode ser desfeita.',
@@ -147,249 +95,181 @@ const GoalDetail = () => {
           onPress: async () => {
             try {
               await api.delete(`/api/goals/${goalId}`);
-              Alert.alert('Sucesso', 'Meta excluída com sucesso!');
+              Alert.alert('Sucesso', 'Meta excluída com sucesso.');
               navigation.goBack();
             } catch (error) {
               console.error('Erro ao excluir meta:', error);
               Alert.alert('Erro', 'Não foi possível excluir a meta.');
             }
-          }
+          } 
         }
       ]
     );
   };
 
-  if (loading || !goal) {
+  if (loading) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <View style={styles.header}>
-          <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons name={"arrow-back" as any} size={24} color={colors.text} />
-          </TouchableOpacity>
-          <Text style={[styles.headerTitle, { color: colors.text }]}>Detalhes da Meta</Text>
-          <TouchableOpacity 
-            onPress={() => goal && navigation.navigate('EditGoal', { goalId: goal._id })}
-            disabled={!goal}
-          >
-            <Ionicons 
-              name={"create-outline" as any} 
-              size={24} 
-              color={goal ? colors.primary : colors.textSecondary} 
-            />
-          </TouchableOpacity>
-        </View>
         <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
 
-  const progress = calculateProgress(goal.currentAmount, goal.targetAmount);
-  const monthlyAmount = calculateMonthlyAmount();
-  const daysRemaining = calculateDaysRemaining();
+  if (!goal) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <Text style={[styles.errorText, { color: colors.danger }]}>
+          Meta não encontrada ou erro ao carregar.
+        </Text>
+        <TouchableOpacity 
+          style={[styles.button, { backgroundColor: colors.primary }]}
+          onPress={() => navigation.goBack()}
+        >
+          <Text style={styles.buttonText}>Voltar</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Ionicons 
-            name={"arrow-back" as any} 
-            size={24} 
-            color={colors.text} 
-          />
+          <Ionicons name={"arrow-back" as any} size={24} color={colors.text} />
         </TouchableOpacity>
         <Text style={[styles.headerTitle, { color: colors.text }]}>Detalhes da Meta</Text>
-        <TouchableOpacity onPress={handleDeleteGoal}>
-          <Ionicons 
-            name={"trash-outline" as any} 
-            size={24} 
-            color={colors.danger} 
-          />
-        </TouchableOpacity>
-      </View>
-      
-      <ScrollView style={styles.scrollContainer}>
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.goalTitle, { color: colors.text }]}>{goal.title}</Text>
-          
-          {goal.category && (
-            <View style={[styles.categoryTag, { backgroundColor: colors.primary + '20' }]}>
-              <Text style={[styles.categoryText, { color: colors.primary }]}>
-                {goal.category}
-              </Text>
-            </View>
-          )}
-          
-          {goal.description && (
-            <Text style={[styles.description, { color: colors.textSecondary }]}>
-              {goal.description}
-            </Text>
-          )}
+        <View style={styles.headerActions}>
+          <TouchableOpacity style={styles.headerButton} onPress={editGoal}>
+            <Ionicons name={"create-outline" as any} size={24} color={colors.primary} />
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.headerButton} onPress={deleteGoal}>
+            <Ionicons name={"trash-outline" as any} size={24} color={colors.danger} />
+          </TouchableOpacity>
         </View>
-        
+      </View>
+
+      <ScrollView style={styles.content}>
         <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Progresso</Text>
+          <Text style={[styles.title, { color: colors.text }]}>{goal.title}</Text>
           
           <View style={styles.progressContainer}>
-            <View 
-              style={[
-                styles.progressBar, 
-                { backgroundColor: colors.border }
-              ]}
-            >
+            <View style={[styles.progressBar, { backgroundColor: colors.border }]}>
               <View 
                 style={[
                   styles.progressFill, 
                   { 
-                    width: `${progress}%`, 
-                    backgroundColor: goal.isExpense ? colors.warning : colors.success
+                    width: `${calculateProgress()}%`, 
+                    backgroundColor: goal.isExpense ? colors.warning : colors.success 
                   }
                 ]} 
               />
             </View>
-            <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-              {progress.toFixed(0)}%
+            <Text style={[styles.progressText, { color: colors.text }]}>
+              {calculateProgress().toFixed(0)}%
             </Text>
           </View>
           
-          <View style={styles.amountRow}>
-            <View>
-              <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>
-                {goal.isExpense ? 'Valor Planejado' : 'Meta'}
-              </Text>
-              <Text style={[styles.amount, { color: colors.text }]}>
-                {formatCurrency(goal.targetAmount)}
-              </Text>
-            </View>
-            
-            <View style={{ alignItems: 'flex-end' }}>
-              <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>
-                {goal.isExpense ? 'Valor Reservado' : 'Poupado'}
-              </Text>
-              <Text style={[styles.amount, { color: colors.text }]}>
+          <View style={styles.amountContainer}>
+            <View style={styles.amountItem}>
+              <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>Atual</Text>
+              <Text style={[styles.amountValue, { color: colors.success }]}>
                 {formatCurrency(goal.currentAmount)}
               </Text>
             </View>
-          </View>
-          
-          <View style={[styles.updateButton, { backgroundColor: colors.primary }]}>
-            <TouchableOpacity 
-              onPress={() => {
-                setUpdateType('add');
-                setShowUpdateModal(true);
-              }}
-              style={styles.updateButtonTouchable}
-            >
-              <Text style={styles.updateButtonText}>
-                {goal.isExpense ? 'Reservar Valor' : 'Adicionar Poupança'}
+            <View style={styles.amountItem}>
+              <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>Alvo</Text>
+              <Text style={[styles.amountValue, { color: colors.text }]}>
+                {formatCurrency(goal.targetAmount)}
               </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-        
-        <View style={[styles.card, { backgroundColor: colors.card, borderColor: colors.border }]}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Detalhes</Text>
-          
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Data Alvo</Text>
-            <Text style={[styles.detailValue, { color: colors.text }]}>
-              {formatDate(goal.targetDate)}
-            </Text>
+            </View>
+            <View style={styles.amountItem}>
+              <Text style={[styles.amountLabel, { color: colors.textSecondary }]}>Faltam</Text>
+              <Text style={[styles.amountValue, { color: colors.danger }]}>
+                {formatCurrency(Math.max(0, goal.targetAmount - goal.currentAmount))}
+              </Text>
+            </View>
           </View>
           
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Dias Restantes</Text>
-            <Text style={[styles.detailValue, { color: colors.text }]}>
-              {daysRemaining} dias
-            </Text>
+          <View style={styles.detailsContainer}>
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Tipo</Text>
+              <Text style={[styles.detailValue, { color: colors.text }]}>
+                {goal.isExpense ? 'Gasto Planejado' : 'Economia'}
+              </Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Categoria</Text>
+              <Text style={[styles.detailValue, { color: colors.text }]}>
+                {goal.category || 'Não Especificada'}
+              </Text>
+            </View>
+            <View style={styles.detailRow}>
+              <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Data Alvo</Text>
+              <Text style={[styles.detailValue, { color: colors.text }]}>
+                {formatDate(goal.targetDate)}
+              </Text>
+            </View>
           </View>
           
-          <View style={styles.detailRow}>
-            <Text style={[styles.detailLabel, { color: colors.textSecondary }]}>Tipo de Meta</Text>
-            <Text style={[styles.detailValue, { color: colors.text }]}>
-              {goal.isExpense ? 'Gasto Planejado' : 'Meta de Economia'}
-            </Text>
-          </View>
-          
-          {monthlyAmount > 0 && (
-            <View style={[styles.monthlyContainer, { backgroundColor: colors.primary + '10' }]}>
-              <Text style={[styles.monthlyText, { color: colors.primary }]}>
-                Para atingir esta meta até {formatDate(goal.targetDate)}, você precisa 
-                {goal.isExpense ? ' reservar ' : ' poupar '}
-                {formatCurrency(monthlyAmount)} por mês.
+          {goal.description && (
+            <View style={styles.descriptionContainer}>
+              <Text style={[styles.descriptionLabel, { color: colors.textSecondary }]}>Descrição</Text>
+              <Text style={[styles.descriptionText, { color: colors.text }]}>
+                {goal.description}
               </Text>
             </View>
           )}
+          
+          <TouchableOpacity 
+            style={[styles.addButton, { backgroundColor: colors.primary }]}
+            onPress={addTransaction}
+          >
+            <Ionicons name={"add" as any} size={20} color="#fff" />
+            <Text style={styles.addButtonText}>Adicionar Transação</Text>
+          </TouchableOpacity>
         </View>
-      </ScrollView>
-      
-      {/* Modal para atualizar valor */}
-      <Modal
-        visible={showUpdateModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowUpdateModal(false)}
-      >
-        <View style={styles.modalContainer}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              {updateType === 'add' 
-                ? (goal.isExpense ? 'Reservar Valor' : 'Adicionar Poupança') 
-                : 'Definir Valor Atual'}
+        
+        <View style={styles.transactionsHeader}>
+          <Text style={[styles.transactionsTitle, { color: colors.text }]}>Histórico</Text>
+        </View>
+        
+        {transactions.length === 0 ? (
+          <View style={[styles.emptyContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+            <Ionicons name={"calendar-outline" as any} size={40} color={colors.textSecondary} />
+            <Text style={[styles.emptyText, { color: colors.textSecondary }]}>
+              Nenhuma transação registrada
             </Text>
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[
-                  styles.typeButton, 
-                  updateType === 'add' && { backgroundColor: colors.primary },
-                  { borderColor: colors.border }
-                ]}
-                onPress={() => setUpdateType('add')}
-              >
-                <Text style={{ color: updateType === 'add' ? '#fff' : colors.text }}>Adicionar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[
-                  styles.typeButton, 
-                  updateType === 'set' && { backgroundColor: colors.primary },
-                  { borderColor: colors.border }
-                ]}
-                onPress={() => setUpdateType('set')}
-              >
-                <Text style={{ color: updateType === 'set' ? '#fff' : colors.text }}>Definir Total</Text>
-              </TouchableOpacity>
-            </View>
-            
-            <View style={[styles.amountInputContainer, { borderColor: colors.border }]}>
-              <Text style={[styles.currencySymbol, { color: colors.textSecondary }]}>R$</Text>
-              <TextInput
-                style={[styles.amountInput, { color: colors.text }]}
-                placeholder="0,00"
-                placeholderTextColor={colors.textSecondary + '80'}
-                keyboardType="decimal-pad"
-                value={updateAmount}
-                onChangeText={setUpdateAmount}
-                autoFocus
-              />
-            </View>
-            
-            <View style={styles.modalActions}>
-              <TouchableOpacity 
-                style={[styles.modalButton, { borderColor: colors.border }]}
-                onPress={() => setShowUpdateModal(false)}
-              >
-                <Text style={{ color: colors.text }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, { backgroundColor: colors.primary }]}
-                onPress={handleUpdateAmount}
-              >
-                <Text style={{ color: '#fff' }}>Confirmar</Text>
-              </TouchableOpacity>
-            </View>
           </View>
-        </View>
-      </Modal>
+        ) : (
+          transactions.map((transaction, index) => (
+            <View 
+              key={transaction._id || index}
+              style={[styles.transactionItem, { backgroundColor: colors.card, borderColor: colors.border }]}
+            >
+              <View style={styles.transactionHeader}>
+                <Text style={[styles.transactionDate, { color: colors.textSecondary }]}>
+                  {formatDate(transaction.date)}
+                </Text>
+                <Text 
+                  style={[
+                    styles.transactionAmount, 
+                    { 
+                      color: transaction.type === 'deposit' ? colors.success : colors.danger 
+                    }
+                  ]}
+                >
+                  {transaction.type === 'deposit' ? '+' : '-'} {formatCurrency(transaction.amount)}
+                </Text>
+              </View>
+              {transaction.description && (
+                <Text style={[styles.transactionDescription, { color: colors.text }]}>
+                  {transaction.description}
+                </Text>
+              )}
+            </View>
+          ))
+        )}
+      </ScrollView>
     </View>
   );
 };
@@ -407,17 +287,22 @@ const styles = StyleSheet.create({
     paddingBottom: 20,
   },
   headerTitle: {
-    fontSize: 20,
+    fontSize: 18,
     fontWeight: 'bold',
   },
-  scrollContainer: {
+  headerActions: {
+    flexDirection: 'row',
+  },
+  headerButton: {
+    marginLeft: 16,
+  },
+  content: {
     flex: 1,
     padding: 20,
   },
   card: {
     borderRadius: 12,
-    padding: 16,
-    marginBottom: 16,
+    padding: 20,
     borderWidth: 1,
     elevation: 2,
     shadowColor: '#000',
@@ -425,28 +310,8 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 2,
   },
-  goalTitle: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    marginBottom: 10,
-  },
-  categoryTag: {
-    alignSelf: 'flex-start',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 20,
-    marginBottom: 10,
-  },
-  categoryText: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  description: {
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  sectionTitle: {
-    fontSize: 18,
+  title: {
+    fontSize: 22,
     fontWeight: 'bold',
     marginBottom: 16,
   },
@@ -460,126 +325,133 @@ const styles = StyleSheet.create({
     height: 12,
     borderRadius: 6,
     overflow: 'hidden',
+    marginRight: 10,
   },
   progressFill: {
     height: '100%',
     borderRadius: 6,
   },
   progressText: {
-    marginLeft: 12,
-    fontSize: 16,
-    fontWeight: '600',
+    fontWeight: 'bold',
+    fontSize: 14,
+    width: 40,
+    textAlign: 'right',
   },
-  amountRow: {
+  amountContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 20,
+    marginBottom: 16,
   },
-  amountLabel: {
-    fontSize: 14,
-    marginBottom: 4,
-  },
-  amount: {
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  updateButton: {
-    borderRadius: 8,
-    overflow: 'hidden',
-  },
-  updateButtonTouchable: {
-    padding: 14,
+  amountItem: {
     alignItems: 'center',
   },
-  updateButtonText: {
-    color: '#fff',
+  amountLabel: {
+    fontSize: 12,
+    marginBottom: 4,
+  },
+  amountValue: {
     fontSize: 16,
     fontWeight: 'bold',
+  },
+  detailsContainer: {
+    marginBottom: 16,
   },
   detailRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   detailLabel: {
     fontSize: 14,
   },
   detailValue: {
     fontSize: 14,
-    fontWeight: '600',
+    fontWeight: '500',
   },
-  monthlyContainer: {
-    padding: 12,
-    borderRadius: 8,
-    marginTop: 10,
+  descriptionContainer: {
+    marginBottom: 16,
   },
-  monthlyText: {
+  descriptionLabel: {
     fontSize: 14,
-    textAlign: 'center',
-    lineHeight: 20,
+    marginBottom: 4,
   },
-  modalContainer: {
-    flex: 1,
+  descriptionText: {
+    fontSize: 14,
+  },
+  addButton: {
+    flexDirection: 'row',
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    width: '80%',
-    borderRadius: 12,
-    padding: 20,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    marginBottom: 16,
-  },
-  typeButton: {
-    flex: 1,
-    paddingVertical: 10,
-    alignItems: 'center',
-    borderWidth: 1,
-    marginHorizontal: 4,
-    borderRadius: 8,
-  },
-  amountInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    marginBottom: 20,
-  },
-  currencySymbol: {
-    paddingHorizontal: 12,
-    fontSize: 16,
-  },
-  amountInput: {
-    flex: 1,
     padding: 12,
-    fontSize: 16,
+    borderRadius: 8,
   },
-  modalActions: {
+  addButtonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+    marginLeft: 8,
+  },
+  transactionsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
     alignItems: 'center',
-    marginHorizontal: 4,
-    borderRadius: 8,
-    borderWidth: 1,
+    marginTop: 24,
+    marginBottom: 12,
   },
+  transactionsTitle: {
+    fontSize: 18,
+    fontWeight: 'bold',
+  },
+  emptyContainer: {
+    borderRadius: 12,
+    padding: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    elevation: 1,
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 16,
+    textAlign: 'center',
+  },
+  transactionItem: {
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    elevation: 1,
+  },
+  transactionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  transactionDate: {
+    fontSize: 12,
+  },
+  transactionAmount: {
+    fontSize: 16,
+    fontWeight: 'bold',
+  },
+  transactionDescription: {
+    fontSize: 14,
+  },
+  errorText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginBottom: 20,
+  },
+  button: {
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  buttonText: {
+    color: '#fff',
+    fontWeight: 'bold',
+  }
 });
 
 export default GoalDetail;
