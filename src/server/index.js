@@ -813,7 +813,314 @@ app.get('/api/investment-transactions/:investmentId', auth, async (req, res) => 
   }
 });
 
-// Previsão financeira
+// 1. Rota para editar perfil do usuário
+app.put('/api/user/profile', auth, async (req, res) => {
+  try {
+    const { name, email, currentPassword, newPassword, photoUrl } = req.body;
+    
+    // Buscar usuário atual
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    // Verificar se o email já está em uso por outro usuário
+    if (email !== user.email) {
+      const existingUser = await User.findOne({ email });
+      if (existingUser) {
+        return res.status(400).json({ message: 'Este e-mail já está em uso por outro usuário' });
+      }
+    }
+    
+    // Se estiver alterando a senha, verificar a senha atual
+    if (newPassword && currentPassword) {
+      const isMatch = await bcrypt.compare(currentPassword, user.password);
+      if (!isMatch) {
+        return res.status(400).json({ message: 'Senha atual incorreta' });
+      }
+      
+      // Hash da nova senha
+      const salt = await bcrypt.genSalt(10);
+      user.password = await bcrypt.hash(newPassword, salt);
+    }
+    
+    // Atualizar dados
+    user.name = name || user.name;
+    user.email = email || user.email;
+    
+    if (photoUrl) {
+      user.photoUrl = photoUrl;
+    }
+    
+    await user.save();
+    
+    res.json({
+      message: 'Perfil atualizado com sucesso',
+      user: {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        photoUrl: user.photoUrl,
+        theme: user.theme
+      }
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar perfil:', error);
+    res.status(500).json({ message: 'Erro ao atualizar perfil' });
+  }
+});
+
+// 2. Rotas para gerenciar foto de perfil
+app.post('/api/user/profile-photo', auth, async (req, res) => {
+  try {
+    // Esta é apenas uma simulação - em um ambiente real você precisaria de upload de arquivos
+    // usando multer ou similar, e armazenamento em AWS S3, Firebase Storage, etc.
+    // Para simplificar, vamos apenas simular o armazenamento da URL
+    
+    const fakePhotoUrl = `https://randomuser.me/api/portraits/${Math.random() > 0.5 ? 'men' : 'women'}/${Math.floor(Math.random() * 100)}.jpg`;
+    
+    // Atualizar a URL da foto no perfil do usuário
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    user.photoUrl = fakePhotoUrl;
+    await user.save();
+    
+    res.json({
+      message: 'Foto de perfil atualizada com sucesso',
+      photoUrl: fakePhotoUrl
+    });
+  } catch (error) {
+    console.error('Erro ao atualizar foto de perfil:', error);
+    res.status(500).json({ message: 'Erro ao atualizar foto de perfil' });
+  }
+});
+
+app.delete('/api/user/profile-photo', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    user.photoUrl = undefined;
+    await user.save();
+    
+    res.json({ message: 'Foto de perfil removida com sucesso' });
+  } catch (error) {
+    console.error('Erro ao remover foto de perfil:', error);
+    res.status(500).json({ message: 'Erro ao remover foto de perfil' });
+  }
+});
+
+app.get('/api/user/profile', auth, async (req, res) => {
+  try {
+    const user = await User.findById(req.user.userId).select('-password');
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    res.json({
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      photoUrl: user.photoUrl,
+      theme: user.theme
+    });
+  } catch (error) {
+    console.error('Erro ao buscar perfil:', error);
+    res.status(500).json({ message: 'Erro ao buscar perfil' });
+  }
+});
+
+// 3. Modelo e Rota para histórico de transações das metas
+// Adicionar o modelo ao topo do arquivo, junto com os outros modelos:
+const goalTransactionSchema = new mongoose.Schema({
+  goalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Goal', required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  amount: { type: Number, required: true },
+  type: { type: String, enum: ['deposit', 'withdraw'], required: true },
+  description: { type: String },
+  date: { type: Date, default: Date.now }
+});
+
+const GoalTransaction = mongoose.model('GoalTransaction', goalTransactionSchema);
+
+// Rota para obter histórico de transações de uma meta
+app.get('/api/goals/:id/history', auth, async (req, res) => {
+  try {
+    // Verificar se a meta existe e pertence ao usuário
+    const goal = await Goal.findOne({ _id: req.params.id, userId: req.user.userId });
+    if (!goal) {
+      return res.status(404).json({ message: 'Meta não encontrada' });
+    }
+    
+    // Buscar transações da meta
+    const transactions = await GoalTransaction.find({
+      goalId: req.params.id
+    }).sort({ date: 1 });
+    
+    res.json(transactions);
+  } catch (error) {
+    console.error('Erro ao buscar histórico da meta:', error);
+    res.status(500).json({ message: 'Erro ao buscar histórico da meta' });
+  }
+});
+
+// Rota para adicionar transação à meta
+app.post('/api/goals/:id/transaction', auth, async (req, res) => {
+  try {
+    const { amount, type, description } = req.body;
+    
+    // Verificar se a meta existe e pertence ao usuário
+    const goal = await Goal.findOne({ _id: req.params.id, userId: req.user.userId });
+    if (!goal) {
+      return res.status(404).json({ message: 'Meta não encontrada' });
+    }
+    
+    // Validar valor
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'Valor inválido' });
+    }
+    
+    // Validar tipo
+    if (!['deposit', 'withdraw'].includes(type)) {
+      return res.status(400).json({ message: 'Tipo de transação inválido' });
+    }
+    
+    // Atualizar valor atual da meta
+    if (type === 'deposit') {
+      goal.currentAmount += amount;
+    } else {
+      goal.currentAmount = Math.max(0, goal.currentAmount - amount);
+    }
+    
+    await goal.save();
+    
+    // Registrar transação
+    const transaction = new GoalTransaction({
+      goalId: req.params.id,
+      userId: req.user.userId,
+      amount,
+      type,
+      description,
+      date: Date.now()
+    });
+    
+    await transaction.save();
+    
+    res.status(201).json({
+      message: 'Transação adicionada com sucesso',
+      transaction,
+      currentAmount: goal.currentAmount
+    });
+  } catch (error) {
+    console.error('Erro ao adicionar transação:', error);
+    res.status(500).json({ message: 'Erro ao adicionar transação' });
+  }
+});
+
+// 4. Melhoria para a previsão financeira - ajustes manuais
+// Adicionar o modelo ao topo do arquivo, junto com os outros modelos:
+const forecastAdjustmentSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  month: { type: Number, required: true }, // 0-11
+  year: { type: Number, required: true },
+  incomeAdjustment: { type: Number, default: 0 },
+  expenseAdjustment: { type: Number, default: 0 },
+  description: { type: String },
+  createdAt: { type: Date, default: Date.now }
+});
+
+const ForecastAdjustment = mongoose.model('ForecastAdjustment', forecastAdjustmentSchema);
+
+// Rota para obter ajustes de previsão
+app.get('/api/forecast/adjustments', auth, async (req, res) => {
+  try {
+    const adjustments = await ForecastAdjustment.find({
+      userId: req.user.userId
+    }).sort({ year: 1, month: 1 });
+    
+    res.json(adjustments);
+  } catch (error) {
+    console.error('Erro ao buscar ajustes de previsão:', error);
+    res.status(500).json({ message: 'Erro ao buscar ajustes de previsão' });
+  }
+});
+
+// Rota para adicionar ou atualizar ajuste
+app.post('/api/forecast/adjustments', auth, async (req, res) => {
+  try {
+    const { month, year, incomeAdjustment, expenseAdjustment, description } = req.body;
+    
+    // Validações
+    if (month < 0 || month > 11) {
+      return res.status(400).json({ message: 'Mês inválido (0-11)' });
+    }
+    
+    if (!year || year < new Date().getFullYear()) {
+      return res.status(400).json({ message: 'Ano inválido' });
+    }
+    
+    // Verificar se já existe um ajuste para este mês/ano
+    let adjustment = await ForecastAdjustment.findOne({
+      userId: req.user.userId,
+      month,
+      year
+    });
+    
+    if (adjustment) {
+      // Atualizar ajuste existente
+      adjustment.incomeAdjustment = incomeAdjustment || 0;
+      adjustment.expenseAdjustment = expenseAdjustment || 0;
+      adjustment.description = description;
+    } else {
+      // Criar novo ajuste
+      adjustment = new ForecastAdjustment({
+        userId: req.user.userId,
+        month,
+        year,
+        incomeAdjustment: incomeAdjustment || 0,
+        expenseAdjustment: expenseAdjustment || 0,
+        description
+      });
+    }
+    
+    await adjustment.save();
+    
+    res.status(201).json({
+      message: 'Ajuste salvo com sucesso',
+      adjustment
+    });
+  } catch (error) {
+    console.error('Erro ao salvar ajuste de previsão:', error);
+    res.status(500).json({ message: 'Erro ao salvar ajuste de previsão' });
+  }
+});
+
+// Rota para remover ajuste
+app.delete('/api/forecast/adjustments/:id', auth, async (req, res) => {
+  try {
+    const adjustment = await ForecastAdjustment.findOneAndDelete({
+      _id: req.params.id,
+      userId: req.user.userId
+    });
+    
+    if (!adjustment) {
+      return res.status(404).json({ message: 'Ajuste não encontrado' });
+    }
+    
+    res.json({ message: 'Ajuste removido com sucesso' });
+  } catch (error) {
+    console.error('Erro ao remover ajuste de previsão:', error);
+    res.status(500).json({ message: 'Erro ao remover ajuste de previsão' });
+  }
+});
+
+// 5. Melhoria na rota de previsão financeira para incluir ajustes manuais e detalhes de fixo/variável
+// Modificar a rota GET /api/forecast para incluir ajustes e mais detalhes
 app.get('/api/forecast', auth, async (req, res) => {
   try {
     const { months = 6 } = req.query;
@@ -832,37 +1139,6 @@ app.get('/api/forecast', auth, async (req, res) => {
       date: { $gte: threeMonthsAgo }
     });
     
-    // Calcular médias mensais de receitas e despesas
-    const endOfLastMonth = new Date();
-    endOfLastMonth.setDate(1);
-    endOfLastMonth.setHours(0, 0, 0, 0);
-    endOfLastMonth.setDate(endOfLastMonth.getDate() - 1);
-    
-    // Filtrar transações por mês e tipo
-    const getMonthlyAverage = (type) => {
-      const monthlyTotals = {};
-      
-      transactions.filter(t => t.type === type).forEach(t => {
-        const date = new Date(t.date);
-        const key = `${date.getFullYear()}-${date.getMonth()}`;
-        
-        if (!monthlyTotals[key]) {
-          monthlyTotals[key] = 0;
-        }
-        
-        monthlyTotals[key] += t.amount;
-      });
-      
-      const months = Object.keys(monthlyTotals).length || 1;
-      const total = Object.values(monthlyTotals).reduce((sum, val) => sum + val, 0);
-      
-      return total / months;
-    };
-    
-    // Calcular médias
-    const avgMonthlyIncome = getMonthlyAverage('income');
-    const avgMonthlyExpense = getMonthlyAverage('expense');
-    
     // Buscar transações recorrentes
     const recurrentTransactions = await Transaction.find({
       userId: req.user.userId,
@@ -872,7 +1148,100 @@ app.get('/api/forecast', auth, async (req, res) => {
       ]
     });
     
-    // Criar previsão para os próximos meses
+    // Buscar ajustes manuais
+    const adjustments = await ForecastAdjustment.find({
+      userId: req.user.userId
+    });
+    
+    // Calcular médias mensais de receitas e despesas fixas e variáveis
+    const getMonthlyAverages = () => {
+      const fixedIncome = recurrentTransactions
+        .filter(t => t.type === 'income')
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      const fixedExpense = recurrentTransactions
+        .filter(t => t.type === 'expense')
+        .reduce((sum, t) => sum + t.amount, 0);
+      
+      // Calcular médias de variáveis
+      const monthlyTotals = {
+        income: {},
+        expense: {}
+      };
+      
+      transactions.forEach(t => {
+        const date = new Date(t.date);
+        const key = `${date.getFullYear()}-${date.getMonth()}`;
+        
+        if (!monthlyTotals[t.type][key]) {
+          monthlyTotals[t.type][key] = 0;
+        }
+        
+        monthlyTotals[t.type][key] += t.amount;
+      });
+      
+      const incomeMonths = Object.keys(monthlyTotals.income).length || 1;
+      const expenseMonths = Object.keys(monthlyTotals.expense).length || 1;
+      
+      const totalIncome = Object.values(monthlyTotals.income).reduce((sum, val) => sum + val, 0);
+      const totalExpense = Object.values(monthlyTotals.expense).reduce((sum, val) => sum + val, 0);
+      
+      // Total médio - fixo = variável
+      const variableIncome = Math.max(0, (totalIncome / incomeMonths) - fixedIncome);
+      const variableExpense = Math.max(0, (totalExpense / expenseMonths) - fixedExpense);
+      
+      return {
+        fixedIncome,
+        variableIncome,
+        fixedExpense,
+        variableExpense
+      };
+    };
+    
+    const averages = getMonthlyAverages();
+    
+    // Calcular categorias para breakdowns
+    const calculateCategoryBreakdown = (type) => {
+      const breakdown = {};
+      
+      // Adicionar categorias de transações fixas/recorrentes
+      recurrentTransactions
+        .filter(t => t.type === type)
+        .forEach(t => {
+          if (!breakdown[t.category]) {
+            breakdown[t.category] = 0;
+          }
+          breakdown[t.category] += t.amount;
+        });
+      
+      // Adicionar médias de categorias variáveis
+      const categoryTotals = {};
+      const categoryCounts = {};
+      
+      transactions
+        .filter(t => t.type === type && !t.isFixed && (!t.recurrence || !t.recurrence.isRecurrent))
+        .forEach(t => {
+          if (!categoryTotals[t.category]) {
+            categoryTotals[t.category] = 0;
+            categoryCounts[t.category] = 0;
+          }
+          categoryTotals[t.category] += t.amount;
+          categoryCounts[t.category]++;
+        });
+      
+      // Calcular média para cada categoria
+      Object.keys(categoryTotals).forEach(category => {
+        const average = categoryTotals[category] / (categoryCounts[category] || 1);
+        if (!breakdown[category]) {
+          breakdown[category] = 0;
+        }
+        breakdown[category] += average;
+      });
+      
+      return breakdown;
+    };
+    
+    // Gerar previsão
     const forecast = [];
     let balance = 0;
     
@@ -896,7 +1265,7 @@ app.get('/api/forecast', auth, async (req, res) => {
     
     balance = currentIncome - currentExpense;
     
-    // Gerar previsão
+    // Gerar previsão mês a mês
     for (let i = 0; i < monthsCount; i++) {
       const forecastDate = new Date();
       forecastDate.setMonth(forecastDate.getMonth() + i + 1);
@@ -907,53 +1276,24 @@ app.get('/api/forecast', auth, async (req, res) => {
       const month = forecastDate.getMonth();
       const year = forecastDate.getFullYear();
       
-      // Receitas fixas e variáveis para o mês
-      let fixedIncome = 0;
-      let variableIncome = 0;
+      // Obter ajustes manuais, se existirem
+      const adjustment = adjustments.find(a => a.month === month && a.year === year);
       
-      // Despesas fixas e variáveis para o mês
-      let fixedExpense = 0;
-      let variableExpense = 0;
+      // Receitas e despesas base para o mês (fixas + variáveis médias)
+      let fixedIncome = averages.fixedIncome;
+      let variableIncome = averages.variableIncome;
+      let fixedExpense = averages.fixedExpense;
+      let variableExpense = averages.variableExpense;
       
-      // Adicionar transações recorrentes
-      recurrentTransactions.forEach(t => {
-        // Verificar se a transação recorrente se aplica a este mês
-        let isApplicable = false;
-        
-        if (t.recurrence && t.recurrence.isRecurrent) {
-          const freq = t.recurrence.frequency || 'monthly';
-          
-          if (freq === 'monthly') {
-            isApplicable = true;
-          } else if (freq === 'yearly' && t.recurrence.month === month) {
-            isApplicable = true;
-          } else if (freq === 'weekly') {
-            // Simplificação: assumir 4 semanas por mês
-            isApplicable = true;
-          }
-        } else if (t.isFixed) {
-          isApplicable = true;
-        }
-        
-        if (isApplicable) {
-          if (t.type === 'income') {
-            fixedIncome += t.amount;
-          } else {
-            fixedExpense += t.amount;
-          }
-        }
-      });
+      // Adicionar ajustes manuais, se existirem
+      const incomeAdjustment = adjustment ? adjustment.incomeAdjustment : 0;
+      const expenseAdjustment = adjustment ? adjustment.expenseAdjustment : 0;
       
-      // Adicionar médias para variáveis
-      variableIncome = avgMonthlyIncome - fixedIncome;
-      variableExpense = avgMonthlyExpense - fixedExpense;
+      // Calcular totais
+      const totalIncome = fixedIncome + variableIncome + incomeAdjustment;
+      const totalExpense = fixedExpense + variableExpense + expenseAdjustment;
+      const monthlyBalance = totalIncome - totalExpense;
       
-      // Garantir que não temos valores negativos
-      variableIncome = Math.max(0, variableIncome);
-      variableExpense = Math.max(0, variableExpense);
-      
-      // Calcular saldo do mês
-      const monthlyBalance = (fixedIncome + variableIncome) - (fixedExpense + variableExpense);
       balance += monthlyBalance;
       
       forecast.push({
@@ -962,19 +1302,27 @@ app.get('/api/forecast', auth, async (req, res) => {
         year,
         fixedIncome,
         variableIncome,
-        totalIncome: fixedIncome + variableIncome,
+        incomeAdjustment,
+        totalIncome,
         fixedExpense,
         variableExpense,
-        totalExpense: fixedExpense + variableExpense,
+        expenseAdjustment,
+        totalExpense,
         monthlyBalance,
-        accumulatedBalance: balance
+        accumulatedBalance: balance,
+        incomeBreakdown: calculateCategoryBreakdown('income'),
+        expenseBreakdown: calculateCategoryBreakdown('expense'),
+        adjustment: adjustment ? {
+          id: adjustment._id,
+          description: adjustment.description
+        } : null
       });
     }
     
     res.json({ forecast });
   } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: 'Erro no servidor' });
+    console.error('Erro ao gerar previsão financeira:', error);
+    res.status(500).json({ message: 'Erro ao gerar previsão financeira' });
   }
 });
 
