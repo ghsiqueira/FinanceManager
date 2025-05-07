@@ -74,3 +74,22 @@ export interface AuthState {
   error: string | null;
 }
 
+export interface ColorTheme {
+  background: string;
+  card: string;
+  text: string;
+  textSecondary: string;
+  border: string;
+  primary: string;
+  secondary: string;
+  success: string;
+  danger: string;
+  warning: string;
+  info: string;
+}
+
+export interface TransactionItemProps {
+  transaction: Transaction;
+  colors: ColorTheme;
+  onPress: () => void;
+}

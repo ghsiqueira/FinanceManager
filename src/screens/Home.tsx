@@ -163,6 +163,12 @@ const Home = () => {
           <View style={styles.headerButtons}>
             <TouchableOpacity 
               style={styles.headerButton}
+              onPress={() => navigation.navigate('Goals')}
+            >
+              <Ionicons name={"flag-outline" as any} size={24} color={colors.text} />
+            </TouchableOpacity>
+            <TouchableOpacity 
+              style={styles.headerButton}
               onPress={() => navigation.navigate('Settings')}
             >
               <Ionicons name={"settings-outline" as any} size={24} color={colors.text} />
@@ -247,15 +253,17 @@ const Home = () => {
         </View>
 
         {/* Seção de Metas */}
-        {goals.length > 0 && (
-          <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={[styles.sectionTitle, { color: colors.text }]}>Metas</Text>
+        <View style={styles.section}>
+          <View style={styles.sectionHeader}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Metas</Text>
+            {goals.length > 0 && (
               <TouchableOpacity onPress={() => navigation.navigate('Goals')}>
                 <Text style={[styles.viewAllText, { color: colors.primary }]}>Ver Todas</Text>
               </TouchableOpacity>
-            </View>
-            
+            )}
+          </View>
+          
+          {goals.length > 0 ? (
             <ScrollView 
               horizontal 
               showsHorizontalScrollIndicator={false}
@@ -303,8 +311,22 @@ const Home = () => {
                 <Text style={[styles.addGoalText, { color: colors.primary }]}>Nova Meta</Text>
               </TouchableOpacity>
             </ScrollView>
-          </View>
-        )}
+          ) : (
+            <View style={[styles.emptyGoalsContainer, { backgroundColor: colors.card, borderColor: colors.border }]}>
+              <Ionicons name={"flag-outline" as any} size={48} color={colors.primary} />
+              <Text style={[styles.emptyGoalsText, { color: colors.text }]}>Você ainda não tem metas</Text>
+              <Text style={[styles.emptyGoalsSubtext, { color: colors.textSecondary }]}>
+                Crie metas financeiras para acompanhar seu progresso
+              </Text>
+              <TouchableOpacity 
+                style={[styles.addFirstGoalButton, { backgroundColor: colors.primary }]}
+                onPress={() => navigation.navigate('AddGoal')}
+              >
+                <Text style={styles.addFirstGoalButtonText}>Criar Primeira Meta</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
 
         {/* Seção de Orçamentos */}
         {budgets.length > 0 && (
@@ -816,6 +838,39 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
   },
+  emptyGoalsContainer: {
+    marginHorizontal: 20,
+    borderRadius: 12,
+    padding: 24,
+    borderWidth: 1,
+    elevation: 2,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    alignItems: 'center',
+  },
+  emptyGoalsText: {
+    fontSize: 18,
+    fontWeight: 'bold',
+    marginTop: 16,
+  },
+  emptyGoalsSubtext: {
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 8,
+    marginBottom: 20,
+  },
+  addFirstGoalButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+  },
+  addFirstGoalButtonText: {
+    color: '#fff',
+    fontSize: 16,
+    fontWeight: 'bold',
+  },  
 });
 
 export default Home;

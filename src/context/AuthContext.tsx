@@ -24,7 +24,8 @@ type AuthAction =
   | { type: 'LOGOUT' }
   | { type: 'CLEAR_ERRORS' }
   | { type: 'USER_LOADED'; payload: User }
-  | { type: 'LOADING_END' };
+  | { type: 'LOADING_END' }
+  | { type: 'UPDATE_USER'; payload: User }; // Adicionado o tipo UPDATE_USER
 
 // Reducer
 const authReducer = (state: AuthState, action: AuthAction): AuthState => {
@@ -68,6 +69,11 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
         isLoading: false,
         error: null
       };
+    case 'UPDATE_USER':
+      return {
+        ...state,
+        user: action.payload,
+      };
     case 'CLEAR_ERRORS':
       return {
         ...state,
@@ -83,13 +89,13 @@ const authReducer = (state: AuthState, action: AuthAction): AuthState => {
   }
 };
 
-// Criar contexto
 interface AuthContextProps {
   state: AuthState;
   login: (email: string, password: string) => Promise<void>;
   register: (name: string, email: string, password: string) => Promise<void>;
-  logout: () => void;
-  clearErrors: () => void;
+  logout: () => Promise<void>;
+  updateUser: (user: User) => void;
+  clearErrors: () => void; // Adicionado clearErrors na interface
 }
 
 const AuthContext = createContext<AuthContextProps | undefined>(undefined);
@@ -196,13 +202,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   // Logout
-  const logout = () => dispatch({ type: 'LOGOUT' });
+  const logout = async () => {
+    dispatch({ type: 'LOGOUT' });
+    return Promise.resolve();
+  };
+
+  // Atualizar usuário
+  const updateUser = (user: User) => {
+    dispatch({ type: 'UPDATE_USER', payload: user });
+  };
 
   // Limpar erros
   const clearErrors = () => dispatch({ type: 'CLEAR_ERRORS' });
 
   return (
-    <AuthContext.Provider value={{ state, login, register, logout, clearErrors }}>
+    <AuthContext.Provider value={{ state, login, register, logout, clearErrors, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

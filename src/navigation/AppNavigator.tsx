@@ -1,6 +1,6 @@
 // src/navigation/AppNavigator.tsx
 import React from 'react';
-import { NavigationContainer } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createStackNavigator } from '@react-navigation/stack';
 import { StatusBar } from 'react-native';
 import { useAuth } from '../context/AuthContext';
@@ -31,6 +31,10 @@ import AddInvestment from '../screens/AddInvestment';
 import InvestmentDetail from '../screens/InvestmentDetail';
 import AddInvestmentTransaction from '../screens/AddInvestmentTransaction';
 
+import EditGoal from '../screens/EditGoal';
+import EditProfile from '../screens/EditProfile';
+import PrevisaoFinanceira from '../screens/PrevisaoFinanceira';
+
 // Configurações
 import Settings from '../screens/Settings';
 
@@ -46,41 +50,28 @@ const AppNavigator = () => {
     return null;
   }
 
+  // Criar um tema personalizado baseado no DefaultTheme
+  const customTheme = {
+    ...DefaultTheme,
+    dark: isDark,
+    colors: {
+      ...DefaultTheme.colors,
+      primary: colors.primary,
+      background: colors.background,
+      card: colors.card,
+      text: colors.text,
+      border: colors.border,
+      notification: colors.primary,
+    }
+  };
+
   return (
     <>
       <StatusBar 
         barStyle={isDark ? 'light-content' : 'dark-content'} 
         backgroundColor={colors.background} 
       />
-      <NavigationContainer theme={{
-        dark: isDark,
-        colors: {
-          primary: colors.primary,
-          background: colors.background,
-          card: colors.card,
-          text: colors.text,
-          border: colors.border,
-          notification: colors.primary,
-        },
-        fonts: {
-          regular: {
-            fontFamily: 'System',
-            fontWeight: '400',
-          },
-          medium: {
-            fontFamily: 'System',
-            fontWeight: '500',
-          },
-          bold: {
-            fontFamily: 'System',
-            fontWeight: '700',
-          },
-          heavy: {
-            fontFamily: 'System',
-            fontWeight: '900',
-          }
-        }
-      }}>
+      <NavigationContainer theme={customTheme}>
         <Stack.Navigator screenOptions={{ headerShown: false }}>
           {isAuthenticated ? (
             // Rotas autenticadas
@@ -91,6 +82,7 @@ const AppNavigator = () => {
               <Stack.Screen name="Goals" component={Goals} />
               <Stack.Screen name="AddGoal" component={AddGoal} />
               <Stack.Screen name="GoalDetail" component={GoalDetail} />
+              <Stack.Screen name="EditGoal" component={EditGoal} /> {/* Nova rota */}
               <Stack.Screen name="Budgets" component={Budgets} />
               <Stack.Screen name="AddBudget" component={AddBudget} />
               <Stack.Screen name="EditBudget" component={EditBudget} />
@@ -99,6 +91,8 @@ const AppNavigator = () => {
               <Stack.Screen name="InvestmentDetail" component={InvestmentDetail} />
               <Stack.Screen name="AddInvestmentTransaction" component={AddInvestmentTransaction} />
               <Stack.Screen name="Settings" component={Settings} />
+              <Stack.Screen name="EditProfile" component={EditProfile} /> {/* Nova rota */}
+              <Stack.Screen name="PrevisaoFinanceira" component={PrevisaoFinanceira} /> {/* Nova rota */}
             </>
           ) : (
             // Rotas não autenticadas

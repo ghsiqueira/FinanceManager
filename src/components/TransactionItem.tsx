@@ -2,18 +2,18 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Transaction } from '../types';
+import { Transaction, ColorTheme, TransactionItemProps } from '../types';
 
-interface TransactionItemProps {
-  transaction: Transaction;
-  onDelete: () => void;
-}
-
-const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onDelete }) => {
+const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, colors, onPress }) => {
   // Função para formatar a data
   const formatDate = (date: Date) => {
     const d = new Date(date);
     return d.toLocaleDateString('pt-BR');
+  };
+
+  // Função para formatar o valor monetário
+  const formatCurrency = (value: number) => {
+    return `R$ ${value.toFixed(2)}`;
   };
 
   // Ícone e cor baseados na categoria
@@ -21,37 +21,40 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onDelete
     switch (category.toLowerCase()) {
       case 'alimentação':
       case 'food':
-        return { name: 'restaurant' as any, color: '#FF6B6B' };
+        return { name: 'restaurant' as any, color: colors.danger };
       case 'transporte':
       case 'transport':
-        return { name: 'car' as any, color: '#4ECDC4' };
+        return { name: 'car' as any, color: colors.info };
       case 'moradia':
       case 'housing':
-        return { name: 'home' as any, color: '#FF9F1C' };
+        return { name: 'home' as any, color: colors.warning };
       case 'saúde':
       case 'health':
-        return { name: 'medical' as any, color: '#F94144' };
+        return { name: 'medical' as any, color: colors.danger };
       case 'educação':
       case 'education':
-        return { name: 'school' as any, color: '#577590' };
+        return { name: 'school' as any, color: colors.primary };
       case 'lazer':
       case 'leisure':
-        return { name: 'game-controller' as any, color: '#8338EC' };
+        return { name: 'game-controller' as any, color: colors.secondary };
       case 'salário':
       case 'salary':
-        return { name: 'cash' as any, color: '#06D6A0' };
+        return { name: 'cash' as any, color: colors.success };
       case 'investimento':
       case 'investment':
-        return { name: 'trending-up' as any, color: '#118AB2' };
+        return { name: 'trending-up' as any, color: colors.info };
       default:
-        return { name: 'pricetag' as any, color: '#999' };
+        return { name: 'pricetag' as any, color: colors.textSecondary };
     }
   };  
 
   const { name, color } = getCategoryIcon(transaction.category);
 
   return (
-    <View style={styles.container}>
+    <TouchableOpacity 
+      style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]} 
+      onPress={onPress}
+    >
       <View style={[styles.iconContainer, { backgroundColor: color + '20' }]}>
         <Ionicons name={name as any} size={20} color={color} />
       </View>
@@ -59,38 +62,31 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, onDelete
       <View style={styles.detailsContainer}>
         <View style={styles.topRow}>
           <View style={styles.categoryContainer}>
-            <Text style={styles.category}>{transaction.category}</Text>
+            <Text style={[styles.category, { color: colors.text }]}>{transaction.category}</Text>
             {transaction.isFixed && (
-              <View style={styles.fixedBadge}>
-                <Text style={styles.fixedText}>Fixa</Text>
+              <View style={[styles.fixedBadge, { backgroundColor: colors.primary + '20' }]}>
+                <Text style={[styles.fixedText, { color: colors.primary }]}>Fixa</Text>
               </View>
             )}
           </View>
           <Text 
             style={[
               styles.amount, 
-              transaction.type === 'income' ? styles.income : styles.expense
+              { color: transaction.type === 'income' ? colors.success : colors.danger }
             ]}
           >
-            {transaction.type === 'income' ? '+' : '-'} R$ {transaction.amount.toFixed(2)}
+            {transaction.type === 'income' ? '+' : '-'} {formatCurrency(transaction.amount)}
           </Text>
         </View>
         
         <View style={styles.bottomRow}>
-          <Text style={styles.description}>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>
             {transaction.description || '(Sem descrição)'}
           </Text>
-          <Text style={styles.date}>{formatDate(transaction.date)}</Text>
+          <Text style={[styles.date, { color: colors.textSecondary }]}>{formatDate(transaction.date)}</Text>
         </View>
       </View>
-      
-      <TouchableOpacity 
-        style={styles.deleteButton} 
-        onPress={onDelete}
-      >
-        <Ionicons name={"trash-outline" as any} size={18} color="#999" />
-      </TouchableOpacity>
-    </View>
+    </TouchableOpacity>
   );
 };
 
@@ -98,10 +94,10 @@ const styles = StyleSheet.create({
   container: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#fff',
     borderRadius: 12,
     padding: 15,
     marginBottom: 12,
+    borderWidth: 1,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -132,18 +128,15 @@ const styles = StyleSheet.create({
   category: {
     fontSize: 16,
     fontWeight: 'bold',
-    color: '#2e2e2e',
     marginRight: 5,
   },
   fixedBadge: {
-    backgroundColor: '#6200ee20',
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 10,
   },
   fixedText: {
     fontSize: 10,
-    color: '#6200ee',
     fontWeight: 'bold',
   },
   bottomRow: {
@@ -155,25 +148,13 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: 'bold',
   },
-  income: {
-    color: 'green',
-  },
-  expense: {
-    color: 'red',
-  },
   description: {
     fontSize: 14,
-    color: '#666',
     flex: 1,
   },
   date: {
     fontSize: 12,
-    color: '#999',
-  },
-  deleteButton: {
-    padding: 5,
-    marginLeft: 10,
-  },
+  }
 });
 
 export default TransactionItem;

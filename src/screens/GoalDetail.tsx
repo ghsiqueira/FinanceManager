@@ -164,18 +164,17 @@ const GoalDetail = () => {
       <View style={[styles.container, { backgroundColor: colors.background }]}>
         <View style={styles.header}>
           <TouchableOpacity onPress={() => navigation.goBack()}>
-            <Ionicons 
-              name={"arrow-back" as any} 
-              size={24} 
-              color={colors.text} 
-            />
+            <Ionicons name={"arrow-back" as any} size={24} color={colors.text} />
           </TouchableOpacity>
           <Text style={[styles.headerTitle, { color: colors.text }]}>Detalhes da Meta</Text>
-          <TouchableOpacity onPress={handleDeleteGoal}>
+          <TouchableOpacity 
+            onPress={() => goal && navigation.navigate('EditGoal', { goalId: goal._id })}
+            disabled={!goal}
+          >
             <Ionicons 
-              name={"trash-outline" as any} 
+              name={"create-outline" as any} 
               size={24} 
-              color={colors.danger} 
+              color={goal ? colors.primary : colors.textSecondary} 
             />
           </TouchableOpacity>
         </View>
