@@ -74,24 +74,99 @@ const userSchema = new mongoose.Schema({
   email: { type: String, required: true, unique: true },
   password: { type: String, required: true },
   name: { type: String, required: true },
-  createdAt: { type: Date, default: Date.now }
+  createdAt: { type: Date, default: Date.now },
+  theme: { type: String, enum: ['light', 'dark', 'system'], default: 'system' }
 });
 
-// Modelo de Transação - ATUALIZADO com isFixed
+// Modelo de Transação - ATUALIZADO com recorrência
 const transactionSchema = new mongoose.Schema({
   userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
   amount: { type: Number, required: true },
   type: { type: String, enum: ['income', 'expense'], required: true },
   category: { type: String, required: true },
   description: { type: String },
-  isFixed: { type: Boolean, default: false }, // Nova propriedade para despesas fixas
+  isFixed: { type: Boolean, default: false },
+  recurrence: { 
+    isRecurrent: { type: Boolean, default: false },
+    frequency: { type: String, enum: ['monthly', 'weekly', 'yearly'], default: 'monthly' },
+    dayOfMonth: { type: Number },
+    dayOfWeek: { type: Number },
+    month: { type: Number },
+    nextDate: { type: Date }
+  },
   date: { type: Date, default: Date.now }
+});
+
+// Modelo de Meta Financeira
+const goalSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  title: { type: String, required: true },
+  targetAmount: { type: Number, required: true },
+  currentAmount: { type: Number, default: 0 },
+  targetDate: { type: Date, required: true },
+  isExpense: { type: Boolean, default: false }, // se é uma economia ou gasto programado
+  category: { type: String },
+  description: { type: String },
+  createdAt: { type: Date, default: Date.now }
+});
+
+// Modelo de Orçamento
+const budgetSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  category: { type: String, required: true },
+  amount: { type: Number, required: true },
+  period: { type: String, enum: ['monthly', 'weekly', 'yearly'], default: 'monthly' },
+  startDate: { type: Date, default: Date.now },
+  endDate: { type: Date },
+  isActive: { type: Boolean, default: true }
+});
+
+// Modelo de Investimento
+const investmentSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  name: { type: String, required: true },
+  type: { type: String, enum: ['ações', 'fundos', 'renda fixa', 'poupança', 'outros'], required: true },
+  initialAmount: { type: Number, required: true },
+  currentAmount: { type: Number, required: true },
+  startDate: { type: Date, default: Date.now },
+  expectedReturn: { type: Number },
+  description: { type: String }
+});
+
+// Modelo para Transações de Investimento
+const investmentTransactionSchema = new mongoose.Schema({
+  investmentId: { type: mongoose.Schema.Types.ObjectId, ref: 'Investment', required: true },
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  type: { type: String, enum: ['aporte', 'resgate', 'rendimento'], required: true },
+  amount: { type: Number, required: true },
+  date: { type: Date, default: Date.now },
+  description: { type: String }
 });
 
 const User = mongoose.model('User', userSchema);
 const Transaction = mongoose.model('Transaction', transactionSchema);
+const Goal = mongoose.model('Goal', goalSchema);
+const Budget = mongoose.model('Budget', budgetSchema);
+const Investment = mongoose.model('Investment', investmentSchema);
+const InvestmentTransaction = mongoose.model('InvestmentTransaction', investmentTransactionSchema);
 
-// Rota de registro
+// Middleware de autenticação
+const auth = (req, res, next) => {
+  try {
+    const token = req.header('x-auth-token');
+    if (!token) {
+      return res.status(401).json({ message: 'Sem token, autorização negada' });
+    }
+    
+    const decoded = jwt.verify(token, JWT_SECRET);
+    req.user = decoded;
+    next();
+  } catch (error) {
+    res.status(401).json({ message: 'Token inválido' });
+  }
+};
+
+// Rotas de usuário
 app.post('/api/register', async (req, res) => {
   try {
     const { email, password, name } = req.body;
@@ -129,7 +204,6 @@ app.post('/api/register', async (req, res) => {
   }
 });
 
-// Rota de login
 app.post('/api/login', async (req, res) => {
   try {
     const { email, password } = req.body;
@@ -153,23 +227,16 @@ app.post('/api/login', async (req, res) => {
       { expiresIn: '7d' }
     );
     
-    res.json({ token, user: { id: user._id, email, name: user.name } });
+    res.json({ token, user: { id: user._id, email, name: user.name, theme: user.theme } });
   } catch (error) {
     console.error(error);
     res.status(500).json({ message: 'Erro no servidor' });
   }
 });
 
-// Rota para obter dados do usuário atual
-app.get('/api/user', async (req, res) => {
+app.get('/api/user', auth, async (req, res) => {
   try {
-    const token = req.header('x-auth-token');
-    if (!token) {
-      return res.status(401).json({ message: 'Sem token, autorização negada' });
-    }
-    
-    const decoded = jwt.verify(token, JWT_SECRET);
-    const user = await User.findById(decoded.userId).select('-password');
+    const user = await User.findById(req.user.userId).select('-password');
     
     if (!user) {
       return res.status(404).json({ message: 'Usuário não encontrado' });
@@ -178,7 +245,8 @@ app.get('/api/user', async (req, res) => {
     res.json({
       id: user._id,
       email: user.email,
-      name: user.name
+      name: user.name,
+      theme: user.theme
     });
   } catch (error) {
     console.error(error);
@@ -186,26 +254,40 @@ app.get('/api/user', async (req, res) => {
   }
 });
 
-// Middleware de autenticação
-const auth = (req, res, next) => {
+// Atualizar preferências do usuário (tema)
+app.put('/api/user/preferences', auth, async (req, res) => {
   try {
-    const token = req.header('x-auth-token');
-    if (!token) {
-      return res.status(401).json({ message: 'Sem token, autorização negada' });
+    const { theme } = req.body;
+    
+    if (theme && !['light', 'dark', 'system'].includes(theme)) {
+      return res.status(400).json({ message: 'Tema inválido' });
     }
     
-    const decoded = jwt.verify(token, JWT_SECRET);
-    req.user = decoded;
-    next();
+    const user = await User.findById(req.user.userId);
+    if (!user) {
+      return res.status(404).json({ message: 'Usuário não encontrado' });
+    }
+    
+    if (theme) user.theme = theme;
+    
+    await user.save();
+    
+    res.json({
+      id: user._id,
+      email: user.email,
+      name: user.name,
+      theme: user.theme
+    });
   } catch (error) {
-    res.status(401).json({ message: 'Token inválido' });
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
   }
-};
+});
 
-// Rotas para transações - ATUALIZADO para incluir isFixed
+// Rotas para transações
 app.post('/api/transactions', auth, async (req, res) => {
   try {
-    const { amount, type, category, description, isFixed, date } = req.body;
+    const { amount, type, category, description, isFixed, recurrence, date } = req.body;
     
     const transaction = new Transaction({
       userId: req.user.userId,
@@ -213,7 +295,8 @@ app.post('/api/transactions', auth, async (req, res) => {
       type,
       category,
       description,
-      isFixed: isFixed || false, // Valor padrão caso não seja fornecido
+      isFixed: isFixed || false,
+      recurrence: recurrence || { isRecurrent: false },
       date: date || Date.now()
     });
     
@@ -236,12 +319,24 @@ app.get('/api/transactions', auth, async (req, res) => {
   }
 });
 
-// Rota para obter apenas despesas fixas
 app.get('/api/transactions/fixed', auth, async (req, res) => {
   try {
     const transactions = await Transaction.find({ 
       userId: req.user.userId,
       isFixed: true 
+    }).sort({ date: -1 });
+    res.json(transactions);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.get('/api/transactions/recurrent', auth, async (req, res) => {
+  try {
+    const transactions = await Transaction.find({ 
+      userId: req.user.userId,
+      'recurrence.isRecurrent': true 
     }).sort({ date: -1 });
     res.json(transactions);
   } catch (error) {
@@ -270,9 +365,8 @@ app.get('/api/transactions/:id', auth, async (req, res) => {
 
 app.put('/api/transactions/:id', auth, async (req, res) => {
   try {
-    const { amount, type, category, description, isFixed, date } = req.body;
+    const { amount, type, category, description, isFixed, recurrence, date } = req.body;
     
-    // Verificar se a transação existe e pertence ao usuário
     const transaction = await Transaction.findOne({
       _id: req.params.id,
       userId: req.user.userId
@@ -282,13 +376,13 @@ app.put('/api/transactions/:id', auth, async (req, res) => {
       return res.status(404).json({ message: 'Transação não encontrada' });
     }
     
-    // Atualizar campos
-    transaction.amount = amount || transaction.amount;
-    transaction.type = type || transaction.type;
-    transaction.category = category || transaction.category;
-    transaction.description = description !== undefined ? description : transaction.description;
-    transaction.isFixed = isFixed !== undefined ? isFixed : transaction.isFixed;
-    transaction.date = date || transaction.date;
+    if (amount !== undefined) transaction.amount = amount;
+    if (type) transaction.type = type;
+    if (category) transaction.category = category;
+    if (description !== undefined) transaction.description = description;
+    if (isFixed !== undefined) transaction.isFixed = isFixed;
+    if (recurrence) transaction.recurrence = recurrence;
+    if (date) transaction.date = date;
     
     await transaction.save();
     res.json(transaction);
@@ -316,7 +410,7 @@ app.delete('/api/transactions/:id', auth, async (req, res) => {
   }
 });
 
-// Rotas para estatísticas - ATUALIZADA para incluir dados de despesas fixas
+// Rotas para estatísticas
 app.get('/api/stats', auth, async (req, res) => {
   try {
     const { period } = req.query;
@@ -397,9 +491,493 @@ app.get('/api/stats', auth, async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Servidor rodando na porta ${PORT}`);
-  console.log(`Acesse http://localhost:${PORT} localmente`);
-  console.log(`Ou http://SEU_IP:${PORT} de dispositivos na mesma rede`);
+// Rotas para metas financeiras
+app.post('/api/goals', auth, async (req, res) => {
+  try {
+    const { title, targetAmount, targetDate, isExpense, category, description } = req.body;
+    
+    const goal = new Goal({
+      userId: req.user.userId,
+      title,
+      targetAmount,
+      currentAmount: 0,
+      targetDate,
+      isExpense,
+      category,
+      description
+    });
+    
+    await goal.save();
+    res.status(201).json(goal);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
 });
+
+app.get('/api/goals', auth, async (req, res) => {
+  try {
+    const goals = await Goal.find({ userId: req.user.userId }).sort({ targetDate: 1 });
+    res.json(goals);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.get('/api/goals/:id', auth, async (req, res) => {
+  try {
+    const goal = await Goal.findOne({ _id: req.params.id, userId: req.user.userId });
+    
+    if (!goal) {
+      return res.status(404).json({ message: 'Meta não encontrada' });
+    }
+    
+    res.json(goal);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.put('/api/goals/:id', auth, async (req, res) => {
+  try {
+    const { title, targetAmount, currentAmount, targetDate, isExpense, category, description } = req.body;
+    
+    const goal = await Goal.findOne({ _id: req.params.id, userId: req.user.userId });
+    if (!goal) {
+      return res.status(404).json({ message: 'Meta não encontrada' });
+    }
+    
+    if (title) goal.title = title;
+    if (targetAmount !== undefined) goal.targetAmount = targetAmount;
+    if (currentAmount !== undefined) goal.currentAmount = currentAmount;
+    if (targetDate) goal.targetDate = targetDate;
+    if (isExpense !== undefined) goal.isExpense = isExpense;
+    if (category) goal.category = category;
+    if (description !== undefined) goal.description = description;
+    
+    await goal.save();
+    res.json(goal);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.delete('/api/goals/:id', auth, async (req, res) => {
+  try {
+    const goal = await Goal.findOneAndDelete({ _id: req.params.id, userId: req.user.userId });
+    
+    if (!goal) {
+      return res.status(404).json({ message: 'Meta não encontrada' });
+    }
+    
+    res.json({ message: 'Meta removida com sucesso' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+// Rotas para orçamentos
+app.post('/api/budgets', auth, async (req, res) => {
+  try {
+    const { category, amount, period, startDate, endDate, isActive } = req.body;
+    
+    const budget = new Budget({
+      userId: req.user.userId,
+      category,
+      amount,
+      period: period || 'monthly',
+      startDate: startDate || Date.now(),
+      endDate,
+      isActive: isActive !== undefined ? isActive : true
+    });
+    
+    await budget.save();
+    res.status(201).json(budget);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.get('/api/budgets', auth, async (req, res) => {
+  try {
+    const budgets = await Budget.find({ userId: req.user.userId }).sort({ category: 1 });
+    res.json(budgets);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.get('/api/budgets/:id', auth, async (req, res) => {
+  try {
+    const budget = await Budget.findOne({ _id: req.params.id, userId: req.user.userId });
+    
+    if (!budget) {
+      return res.status(404).json({ message: 'Orçamento não encontrado' });
+    }
+    
+    res.json(budget);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.put('/api/budgets/:id', auth, async (req, res) => {
+  try {
+    const { category, amount, period, startDate, endDate, isActive } = req.body;
+    
+    const budget = await Budget.findOne({ _id: req.params.id, userId: req.user.userId });
+    if (!budget) {
+      return res.status(404).json({ message: 'Orçamento não encontrado' });
+    }
+    
+    if (category) budget.category = category;
+    if (amount !== undefined) budget.amount = amount;
+    if (period) budget.period = period;
+    if (startDate) budget.startDate = startDate;
+    if (endDate !== undefined) budget.endDate = endDate;
+    if (isActive !== undefined) budget.isActive = isActive;
+    
+    await budget.save();
+    res.json(budget);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.delete('/api/budgets/:id', auth, async (req, res) => {
+  try {
+    const budget = await Budget.findOneAndDelete({ _id: req.params.id, userId: req.user.userId });
+    
+    if (!budget) {
+      return res.status(404).json({ message: 'Orçamento não encontrado' });
+    }
+    
+    res.json({ message: 'Orçamento removido com sucesso' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+// Rotas para investimentos
+app.post('/api/investments', auth, async (req, res) => {
+  try {
+    const { name, type, initialAmount, currentAmount, startDate, expectedReturn, description } = req.body;
+    
+    const investment = new Investment({
+      userId: req.user.userId,
+      name,
+      type,
+      initialAmount,
+      currentAmount: currentAmount || initialAmount,
+      startDate: startDate || Date.now(),
+      expectedReturn,
+      description
+    });
+    
+    await investment.save();
+    res.status(201).json(investment);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.get('/api/investments', auth, async (req, res) => {
+  try {
+    const investments = await Investment.find({ userId: req.user.userId }).sort({ name: 1 });
+    res.json(investments);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.get('/api/investments/:id', auth, async (req, res) => {
+  try {
+    const investment = await Investment.findOne({ _id: req.params.id, userId: req.user.userId });
+    
+    if (!investment) {
+      return res.status(404).json({ message: 'Investimento não encontrado' });
+    }
+    
+    res.json(investment);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.put('/api/investments/:id', auth, async (req, res) => {
+  try {
+    const { name, type, initialAmount, currentAmount, startDate, expectedReturn, description } = req.body;
+    
+    const investment = await Investment.findOne({ _id: req.params.id, userId: req.user.userId });
+    if (!investment) {
+      return res.status(404).json({ message: 'Investimento não encontrado' });
+    }
+    
+    if (name) investment.name = name;
+    if (type) investment.type = type;
+    if (initialAmount !== undefined) investment.initialAmount = initialAmount;
+    if (currentAmount !== undefined) investment.currentAmount = currentAmount;
+    if (startDate) investment.startDate = startDate;
+    if (expectedReturn !== undefined) investment.expectedReturn = expectedReturn;
+    if (description !== undefined) investment.description = description;
+    
+    await investment.save();
+    res.json(investment);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.delete('/api/investments/:id', auth, async (req, res) => {
+  try {
+    const investment = await Investment.findOneAndDelete({ _id: req.params.id, userId: req.user.userId });
+    
+    if (!investment) {
+      return res.status(404).json({ message: 'Investimento não encontrado' });
+    }
+    
+    // Remover também todas as transações relacionadas a este investimento
+    await InvestmentTransaction.deleteMany({ investmentId: req.params.id });
+    
+    res.json({ message: 'Investimento removido com sucesso' });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+// Rotas para transações de investimento
+app.post('/api/investment-transactions', auth, async (req, res) => {
+  try {
+    const { investmentId, type, amount, date, description } = req.body;
+    
+    // Verificar se o investimento existe e pertence ao usuário
+    const investment = await Investment.findOne({ _id: investmentId, userId: req.user.userId });
+    if (!investment) {
+      return res.status(404).json({ message: 'Investimento não encontrado' });
+    }
+    
+    const transaction = new InvestmentTransaction({
+      investmentId,
+      userId: req.user.userId,
+      type,
+      amount,
+      date: date || Date.now(),
+      description
+    });
+    
+    await transaction.save();
+    
+    // Atualizar o valor atual do investimento
+    if (type === 'aporte') {
+      investment.currentAmount += amount;
+    } else if (type === 'resgate') {
+      investment.currentAmount -= amount;
+    } else if (type === 'rendimento') {
+      investment.currentAmount += amount;
+    }
+    
+    await investment.save();
+    
+    res.status(201).json(transaction);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+app.get('/api/investment-transactions/:investmentId', auth, async (req, res) => {
+  try {
+    const transactions = await InvestmentTransaction.find({ 
+      investmentId: req.params.investmentId,
+      userId: req.user.userId
+    }).sort({ date: -1 });
+    
+    res.json(transactions);
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+// Previsão financeira
+app.get('/api/forecast', auth, async (req, res) => {
+  try {
+    const { months = 6 } = req.query;
+    const monthsCount = parseInt(months);
+    
+    if (isNaN(monthsCount) || monthsCount <= 0 || monthsCount > 36) {
+      return res.status(400).json({ message: 'Número de meses inválido (1-36)' });
+    }
+    
+    // Buscar todas as transações dos últimos 3 meses para calcular médias
+    const threeMonthsAgo = new Date();
+    threeMonthsAgo.setMonth(threeMonthsAgo.getMonth() - 3);
+    
+    const transactions = await Transaction.find({
+      userId: req.user.userId,
+      date: { $gte: threeMonthsAgo }
+    });
+    
+    // Calcular médias mensais de receitas e despesas
+    const endOfLastMonth = new Date();
+    endOfLastMonth.setDate(1);
+    endOfLastMonth.setHours(0, 0, 0, 0);
+    endOfLastMonth.setDate(endOfLastMonth.getDate() - 1);
+    
+    // Filtrar transações por mês e tipo
+    const getMonthlyAverage = (type) => {
+      const monthlyTotals = {};
+      
+      transactions.filter(t => t.type === type).forEach(t => {
+        const date = new Date(t.date);
+        const key = `${date.getFullYear()}-${date.getMonth()}`;
+        
+        if (!monthlyTotals[key]) {
+          monthlyTotals[key] = 0;
+        }
+        
+        monthlyTotals[key] += t.amount;
+      });
+      
+      const months = Object.keys(monthlyTotals).length || 1;
+      const total = Object.values(monthlyTotals).reduce((sum, val) => sum + val, 0);
+      
+      return total / months;
+    };
+    
+    // Calcular médias
+    const avgMonthlyIncome = getMonthlyAverage('income');
+    const avgMonthlyExpense = getMonthlyAverage('expense');
+    
+    // Buscar transações recorrentes
+    const recurrentTransactions = await Transaction.find({
+      userId: req.user.userId,
+      $or: [
+        { isFixed: true },
+        { 'recurrence.isRecurrent': true }
+      ]
+    });
+    
+    // Criar previsão para os próximos meses
+    const forecast = [];
+    let balance = 0;
+    
+    // Obter saldo atual (transações do mês corrente)
+    const currentMonth = new Date();
+    currentMonth.setDate(1);
+    currentMonth.setHours(0, 0, 0, 0);
+    
+    const currentMonthTransactions = await Transaction.find({
+      userId: req.user.userId,
+      date: { $gte: currentMonth }
+    });
+    
+    const currentIncome = currentMonthTransactions
+      .filter(t => t.type === 'income')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    const currentExpense = currentMonthTransactions
+      .filter(t => t.type === 'expense')
+      .reduce((sum, t) => sum + t.amount, 0);
+    
+    balance = currentIncome - currentExpense;
+    
+    // Gerar previsão
+    for (let i = 0; i < monthsCount; i++) {
+      const forecastDate = new Date();
+      forecastDate.setMonth(forecastDate.getMonth() + i + 1);
+      forecastDate.setDate(1);
+      forecastDate.setHours(0, 0, 0, 0);
+      
+      // Mês e ano da previsão
+      const month = forecastDate.getMonth();
+      const year = forecastDate.getFullYear();
+      
+      // Receitas fixas e variáveis para o mês
+      let fixedIncome = 0;
+      let variableIncome = 0;
+      
+      // Despesas fixas e variáveis para o mês
+      let fixedExpense = 0;
+      let variableExpense = 0;
+      
+      // Adicionar transações recorrentes
+      recurrentTransactions.forEach(t => {
+        // Verificar se a transação recorrente se aplica a este mês
+        let isApplicable = false;
+        
+        if (t.recurrence && t.recurrence.isRecurrent) {
+          const freq = t.recurrence.frequency || 'monthly';
+          
+          if (freq === 'monthly') {
+            isApplicable = true;
+          } else if (freq === 'yearly' && t.recurrence.month === month) {
+            isApplicable = true;
+          } else if (freq === 'weekly') {
+            // Simplificação: assumir 4 semanas por mês
+            isApplicable = true;
+          }
+        } else if (t.isFixed) {
+          isApplicable = true;
+        }
+        
+        if (isApplicable) {
+          if (t.type === 'income') {
+            fixedIncome += t.amount;
+          } else {
+            fixedExpense += t.amount;
+          }
+        }
+      });
+      
+      // Adicionar médias para variáveis
+      variableIncome = avgMonthlyIncome - fixedIncome;
+      variableExpense = avgMonthlyExpense - fixedExpense;
+      
+      // Garantir que não temos valores negativos
+      variableIncome = Math.max(0, variableIncome);
+      variableExpense = Math.max(0, variableExpense);
+      
+      // Calcular saldo do mês
+      const monthlyBalance = (fixedIncome + variableIncome) - (fixedExpense + variableExpense);
+      balance += monthlyBalance;
+      
+      forecast.push({
+        date: forecastDate,
+        month: month + 1, // 1-12 em vez de 0-11
+        year,
+        fixedIncome,
+        variableIncome,
+        totalIncome: fixedIncome + variableIncome,
+        fixedExpense,
+        variableExpense,
+        totalExpense: fixedExpense + variableExpense,
+        monthlyBalance,
+        accumulatedBalance: balance
+      });
+    }
+    
+    res.json({ forecast });
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: 'Erro no servidor' });
+  }
+});
+
+// Iniciar o servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Servidor rodando na porta ${PORT}`));

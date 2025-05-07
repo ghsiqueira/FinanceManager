@@ -1,7 +1,19 @@
+// src/types/navigation.ts
 export type RootStackParamList = {
   Login: undefined;
   Register: undefined;
   Home: undefined;
   AddTransaction: undefined;
   EditTransaction: { transactionId: string };
+  Goals: undefined;
+  AddGoal: undefined;
+  GoalDetail: { goalId: string };
+  Budgets: undefined;
+  AddBudget: undefined;
+  EditBudget: { budgetId: string };
+  Investments: undefined;
+  AddInvestment: undefined;
+  InvestmentDetail: { investmentId: string };
+  AddInvestmentTransaction: { investmentId: string };
+  Settings: undefined;
 };
