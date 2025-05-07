@@ -66,13 +66,11 @@ const GoalDetail = () => {
   };
 
   const addTransaction = () => {
-    // Navegar para uma tela de adicionar transação à meta
-    // Esta funcionalidade pode ser implementada posteriormente
-    Alert.alert(
-      'Adicionar Transação',
-      'Funcionalidade em desenvolvimento',
-      [{ text: 'OK' }]
-    );
+    // Navegar para a tela de adicionar transação à meta
+    if (goal) {
+      console.log('Navegando para AddGoalTransaction com ID:', goalId);
+      navigation.navigate('AddGoalTransaction', { goalId: goal._id });
+    }
   };
 
   const editGoal = () => {

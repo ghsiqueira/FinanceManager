@@ -7,7 +7,7 @@ export type RootStackParamList = {
   Goals: undefined;
   AddGoal: undefined;
   GoalDetail: { goalId: string };
-  EditGoal: { goalId: string }; // Nova rota
+  EditGoal: { goalId: string };
   Budgets: undefined;
   AddBudget: undefined;
   EditBudget: { budgetId: string };
@@ -16,6 +16,7 @@ export type RootStackParamList = {
   InvestmentDetail: { investmentId: string };
   AddInvestmentTransaction: { investmentId: string };
   Settings: undefined;
-  EditProfile: undefined; // Nova rota
-  PrevisaoFinanceira: undefined; // Nova rota
+  EditProfile: undefined;
+  PrevisaoFinanceira: undefined;
+  AddGoalTransaction: { goalId: string };
 };

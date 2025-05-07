@@ -38,6 +38,7 @@ import PrevisaoFinanceira from '../screens/PrevisaoFinanceira';
 
 // Configurações
 import Settings from '../screens/Settings';
+import AddGoalTransaction from '../screens/AddGoalTransaction';
 
 const Stack = createStackNavigator();
 
@@ -83,6 +84,7 @@ const AppNavigator = () => {
               <Stack.Screen name="AddGoal" component={AddGoal} />
               <Stack.Screen name="GoalDetail" component={GoalDetail} />
               <Stack.Screen name="EditGoal" component={EditGoal} />
+              <Stack.Screen name="AddGoalTransaction" component={AddGoalTransaction} />
               <Stack.Screen name="Budgets" component={Budgets} />
               <Stack.Screen name="AddBudget" component={AddBudget} />
               <Stack.Screen name="EditBudget" component={EditBudget} />
