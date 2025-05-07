@@ -1,0 +1,218 @@
+// src/context/AuthContext.tsx
+import React, { createContext, useReducer, useEffect, useContext } from 'react';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { AuthState, User } from '../types';
+import api from '../services/api';
+import { Alert } from 'react-native';
+
+// Estado inicial
+const initialState: AuthState = {
+  token: null,
+  user: null,
+  isAuthenticated: false,
+  isLoading: true,
+  error: null
+};
+
+// Tipos de ações
+type AuthAction =
+  | { type: 'LOGIN_SUCCESS'; payload: { token: string; user: User } }
+  | { type: 'REGISTER_SUCCESS'; payload: { token: string; user: User } }
+  | { type: 'AUTH_ERROR' }
+  | { type: 'LOGIN_FAIL'; payload: string }
+  | { type: 'REGISTER_FAIL'; payload: string }
+  | { type: 'LOGOUT' }
+  | { type: 'CLEAR_ERRORS' }
+  | { type: 'USER_LOADED'; payload: User }
+  | { type: 'LOADING_END' };
+
+// Reducer
+const authReducer = (state: AuthState, action: AuthAction): AuthState => {
+  switch (action.type) {
+    case 'USER_LOADED':
+      return {
+        ...state,
+        isAuthenticated: true,
+        isLoading: false,
+        user: action.payload
+      };
+    case 'LOGIN_SUCCESS':
+    case 'REGISTER_SUCCESS':
+      AsyncStorage.setItem('token', action.payload.token);
+      return {
+        ...state,
+        ...action.payload,
+        isAuthenticated: true,
+        isLoading: false,
+        error: null
+      };
+    case 'AUTH_ERROR':
+    case 'LOGIN_FAIL':
+    case 'REGISTER_FAIL':
+      AsyncStorage.removeItem('token');
+      return {
+        ...state,
+        token: null,
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: action.type === 'AUTH_ERROR' ? 'Erro de autenticação' : action.payload
+      };
+    case 'LOGOUT':
+      AsyncStorage.removeItem('token');
+      return {
+        ...state,
+        token: null,
+        user: null,
+        isAuthenticated: false,
+        isLoading: false,
+        error: null
+      };
+    case 'CLEAR_ERRORS':
+      return {
+        ...state,
+        error: null
+      };
+    case 'LOADING_END':
+      return {
+        ...state,
+        isLoading: false
+      };
+    default:
+      return state;
+  }
+};
+
+// Criar contexto
+interface AuthContextProps {
+  state: AuthState;
+  login: (email: string, password: string) => Promise<void>;
+  register: (name: string, email: string, password: string) => Promise<void>;
+  logout: () => void;
+  clearErrors: () => void;
+}
+
+const AuthContext = createContext<AuthContextProps | undefined>(undefined);
+
+// Provider
+export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [state, dispatch] = useReducer(authReducer, initialState);
+
+  // Carregar token salvo
+  useEffect(() => {
+    const loadToken = async () => {
+      const token = await AsyncStorage.getItem('token');
+      
+      if (token) {
+        api.defaults.headers.common['x-auth-token'] = token;
+        try {
+          const res = await api.get('/api/user');
+          dispatch({ type: 'USER_LOADED', payload: res.data });
+        } catch (err) {
+          console.error('Erro ao carregar usuário:', err);
+          dispatch({ type: 'AUTH_ERROR' });
+        }
+      } else {
+        dispatch({ type: 'LOADING_END' });
+      }
+    };
+    
+    loadToken();
+  }, []);
+
+  // Login
+  const login = async (email: string, password: string) => {
+    try {
+      console.log('Tentando fazer login:', { email });
+      console.log('API baseURL:', api.defaults.baseURL);
+      
+      const res = await api.post('/api/login', { email, password });
+      console.log('Resposta do login:', res.data);
+      
+      dispatch({
+        type: 'LOGIN_SUCCESS',
+        payload: res.data
+      });
+      
+      api.defaults.headers.common['x-auth-token'] = res.data.token;
+    } catch (err: any) {
+      console.error('Erro completo do login:', err);
+      
+      if (err.response) {
+        console.error('Dados do erro:', err.response.data);
+        console.error('Status do erro:', err.response.status);
+      } else if (err.request) {
+        console.error('Erro de requisição (sem resposta):', err.request);
+        Alert.alert('Erro de Conexão', 'Não foi possível conectar ao servidor. Verifique sua conexão de internet.');
+      } else {
+        console.error('Mensagem de erro:', err.message);
+      }
+      
+      dispatch({
+        type: 'LOGIN_FAIL',
+        payload: err.response?.data?.message || 'Erro ao fazer login'
+      });
+    }
+  };
+
+  // Registro
+  const register = async (name: string, email: string, password: string) => {
+    try {
+      console.log('Tentando registrar usuário:', { name, email });
+      console.log('API baseURL:', api.defaults.baseURL);
+      
+      const res = await api.post('/api/register', { name, email, password });
+      console.log('Resposta do registro:', res.data);
+      
+      dispatch({
+        type: 'REGISTER_SUCCESS',
+        payload: res.data
+      });
+      
+      api.defaults.headers.common['x-auth-token'] = res.data.token;
+    } catch (err: any) {
+      console.error('Erro completo do registro:', err);
+      
+      if (err.response) {
+        // Erro com resposta do servidor
+        console.error('Dados do erro:', err.response.data);
+        console.error('Status do erro:', err.response.status);
+        Alert.alert('Erro de Registro', err.response.data.message || 'Erro ao registrar usuário');
+      } else if (err.request) {
+        // Erro sem resposta (provavelmente problema de conexão)
+        console.error('Erro de requisição (sem resposta):', err.request);
+        Alert.alert('Erro de Conexão', 'Não foi possível conectar ao servidor. Verifique sua conexão de internet.');
+      } else {
+        // Outros erros
+        console.error('Mensagem de erro:', err.message);
+        Alert.alert('Erro', err.message || 'Ocorreu um erro inesperado');
+      }
+      
+      dispatch({
+        type: 'REGISTER_FAIL',
+        payload: err.response?.data?.message || err.message || 'Erro ao registrar'
+      });
+    }
+  };
+
+  // Logout
+  const logout = () => dispatch({ type: 'LOGOUT' });
+
+  // Limpar erros
+  const clearErrors = () => dispatch({ type: 'CLEAR_ERRORS' });
+
+  return (
+    <AuthContext.Provider value={{ state, login, register, logout, clearErrors }}>
+      {children}
+    </AuthContext.Provider>
+  );
+};
+
+// Hook personalizado para usar o contexto
+export const useAuth = () => {
+  const context = useContext(AuthContext);
+  if (context === undefined) {
+    throw new Error('useAuth deve ser usado dentro de um AuthProvider');
+  }
+  return context;
+};
