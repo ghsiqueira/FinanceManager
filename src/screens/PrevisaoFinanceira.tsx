@@ -68,12 +68,25 @@ const PrevisaoFinanceira = () => {
   const fetchForecast = async () => {
     try {
       setLoading(true);
+      console.log('Buscando previsão financeira para', months, 'meses');
+      
       const res = await api.get(`/api/forecast?months=${months}`);
-      setForecast(res.data.forecast);
+      console.log('Dados de previsão recebidos');
+      
+      // Verificar se os dados estão no formato esperado
+      if (!res.data || !res.data.forecast || !Array.isArray(res.data.forecast)) {
+        console.error('Formato de dados inválido:', res.data);
+        Alert.alert('Erro', 'Os dados de previsão estão em um formato inválido');
+        setForecast([]);
+      } else {
+        setForecast(res.data.forecast);
+      }
+      
       setLoading(false);
     } catch (error) {
       console.error('Erro ao buscar previsão:', error);
       Alert.alert('Erro', 'Não foi possível carregar os dados de previsão financeira.');
+      setForecast([]);
       setLoading(false);
     }
   };

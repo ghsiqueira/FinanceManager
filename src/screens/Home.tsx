@@ -494,7 +494,6 @@ const Home = () => {
           </View>
         )}
 
-        {/* Últimas Transações */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitle, { color: colors.text }]}>Últimas Transações</Text>
@@ -517,7 +516,12 @@ const Home = () => {
                   transaction={transaction}
                   onPress={() => {
                     console.log('Navegando para EditTransaction com ID:', transaction._id);
-                    navigation.navigate('EditTransaction', { transactionId: transaction._id });
+                    if (transaction._id) {
+                      navigation.navigate('EditTransaction', { transactionId: transaction._id });
+                    } else {
+                      console.error('ID da transação é inválido:', transaction);
+                      Alert.alert('Erro', 'Não foi possível editar esta transação.');
+                    }
                   }}
                   colors={colors}
                 />

@@ -55,8 +55,22 @@ const EditTransaction = () => {
   const fetchTransaction = async () => {
     try {
       setLoading(true);
+      console.log('Buscando transação com ID:', transactionId);
+      
+      if (!transactionId) {
+        console.error('ID da transação é undefined ou nulo');
+        Alert.alert(
+          'Erro', 
+          'ID da transação inválido. Retornando à tela anterior.',
+          [{ text: 'OK', onPress: () => navigation.goBack() }]
+        );
+        return;
+      }
+      
       const response = await api.get(`/api/transactions/${transactionId}`);
       const transactionData = response.data;
+      
+      console.log('Transação carregada:', transactionData);
       
       setTransaction(transactionData);
       
@@ -69,7 +83,11 @@ const EditTransaction = () => {
       setDate(new Date(transactionData.date));
     } catch (error) {
       console.error('Erro ao buscar transação:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os dados da transação');
+      Alert.alert(
+        'Erro', 
+        'Não foi possível carregar os dados da transação. Retornando à tela anterior.',
+        [{ text: 'OK', onPress: () => navigation.goBack() }]
+      );
     } finally {
       setLoading(false);
     }

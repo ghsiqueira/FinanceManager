@@ -53,9 +53,13 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, colors, 
   // Verificação de segurança para a função onPress
   const handlePress = () => {
     if (onPress && typeof onPress === 'function') {
-      // Assegurando que onPress é uma função
-      console.log('TransactionItem - Navegando para EditTransaction', transaction._id);
-      onPress();
+      // Verifique se transaction._id existe antes de chamar onPress
+      if (transaction._id) {
+        console.log('TransactionItem - Navegando para EditTransaction', transaction._id);
+        onPress();
+      } else {
+        console.error('TransactionItem - ID da transação é inválido:', transaction);
+      }
     } else {
       console.error('TransactionItem - Função onPress não fornecida ou inválida');
     }
