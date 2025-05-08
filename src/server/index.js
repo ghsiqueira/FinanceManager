@@ -150,6 +150,15 @@ const Budget = mongoose.model('Budget', budgetSchema);
 const Investment = mongoose.model('Investment', investmentSchema);
 const InvestmentTransaction = mongoose.model('InvestmentTransaction', investmentTransactionSchema);
 
+app.get('/', (req, res) => {
+  res.json({ 
+    status: 'online', 
+    message: 'API de Finanças Pessoais está funcionando!',
+    version: '1.0.0',
+    timestamp: new Date()
+  });
+});
+
 // Middleware de autenticação
 const auth = (req, res, next) => {
   try {
