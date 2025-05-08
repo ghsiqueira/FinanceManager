@@ -3,7 +3,7 @@ import axios from 'axios';
 
 // Para emulador Android
 const api = axios.create({
-  baseURL: 'https://finance-api.onrender.com',
+  baseURL: 'https://finance-api-yhku.onrender.com',
 });
 
 // Para dispositivo físico, use o IP da sua máquina na rede
