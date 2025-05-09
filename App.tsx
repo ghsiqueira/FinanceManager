@@ -5,6 +5,7 @@ import { AuthProvider } from './src/context/AuthContext';
 import { ThemeProvider } from './src/context/ThemeContext';
 import AppNavigator from './src/navigation/AppNavigator';
 import OfflineAlert from './src/components/OfflineAlert';
+import ErrorBoundary from './src/components/ErrorBoundary';
 import api from './src/services/api';
 
 export default function App() {
@@ -30,8 +31,10 @@ export default function App() {
     <SafeAreaProvider>
       <AuthProvider>
         <ThemeProvider>
-          <OfflineAlert onRetry={handleRetry} />
-          <AppNavigator />
+          <ErrorBoundary>
+            <OfflineAlert onRetry={handleRetry} />
+            <AppNavigator />
+          </ErrorBoundary>
         </ThemeProvider>
       </AuthProvider>
     </SafeAreaProvider>

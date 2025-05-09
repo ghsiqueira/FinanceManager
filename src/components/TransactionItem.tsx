@@ -1,64 +1,105 @@
 // src/components/TransactionItem.tsx
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Alert } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { Transaction, ColorTheme, TransactionItemProps } from '../types';
+import { Transaction, ColorTheme } from '../types';
+
+interface TransactionItemProps {
+  transaction: Transaction;
+  colors: ColorTheme;
+  onPress: () => void;
+}
 
 const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, colors, onPress }) => {
   // Função para formatar a data
-  const formatDate = (date: Date) => {
-    const d = new Date(date);
-    return d.toLocaleDateString('pt-BR');
+  const formatDate = (date: Date | string) => {
+    try {
+      const d = new Date(date);
+      return d.toLocaleDateString('pt-BR');
+    } catch (error) {
+      console.error('Erro ao formatar data:', error);
+      return 'Data inválida';
+    }
   };
 
   // Função para formatar o valor monetário
   const formatCurrency = (value: number) => {
-    return `R$ ${value.toFixed(2)}`;
+    try {
+      return `R$ ${value.toFixed(2)}`;
+    } catch (error) {
+      console.error('Erro ao formatar valor:', error);
+      return 'R$ 0,00';
+    }
   };
 
-  // Ícone e cor baseados na categoria
+  // Ícone e cor baseados na categoria - Com tratamento de erros
   const getCategoryIcon = (category: string) => {
-    switch (category.toLowerCase()) {
-      case 'alimentação':
-      case 'food':
-        return { name: 'restaurant' as any, color: colors.danger };
-      case 'transporte':
-      case 'transport':
-        return { name: 'car' as any, color: colors.info };
-      case 'moradia':
-      case 'housing':
-        return { name: 'home' as any, color: colors.warning };
-      case 'saúde':
-      case 'health':
-        return { name: 'medical' as any, color: colors.danger };
-      case 'educação':
-      case 'education':
-        return { name: 'school' as any, color: colors.primary };
-      case 'lazer':
-      case 'leisure':
-        return { name: 'game-controller' as any, color: colors.secondary };
-      case 'salário':
-      case 'salary':
-        return { name: 'cash' as any, color: colors.success };
-      case 'investimento':
-      case 'investment':
-        return { name: 'trending-up' as any, color: colors.info };
-      default:
-        return { name: 'pricetag' as any, color: colors.textSecondary };
+    try {
+      switch ((category || '').toLowerCase()) {
+        case 'alimentação':
+        case 'food':
+          return { name: "restaurant", color: colors.danger };
+        case 'transporte':
+        case 'transport':
+          return { name: "car", color: colors.info };
+        case 'moradia':
+        case 'housing':
+          return { name: "home", color: colors.warning };
+        case 'saúde':
+        case 'health':
+          return { name: "medical", color: colors.danger };
+        case 'educação':
+        case 'education':
+          return { name: "school", color: colors.primary };
+        case 'lazer':
+        case 'leisure':
+          return { name: "game-controller", color: colors.secondary };
+        case 'salário':
+        case 'salary':
+          return { name: "cash", color: colors.success };
+        case 'investimento':
+        case 'investment':
+          return { name: "trending-up", color: colors.info };
+        default:
+          return { name: "pricetag", color: colors.textSecondary };
+      }
+    } catch (error) {
+      console.error('Erro ao definir ícone da categoria:', error);
+      return { name: "help-circle", color: colors.textSecondary };
     }
-  };  
+  };
 
-  const { name, color } = getCategoryIcon(transaction.category);
+  // Verificação de segurança para o objeto de transação
+  if (!transaction || typeof transaction !== 'object') {
+    console.error('Transação inválida:', transaction);
+    return (
+      <View style={[styles.container, { 
+        backgroundColor: colors.card, 
+        borderColor: colors.border,
+        opacity: 0.5
+      }]}>
+        <Text style={{ color: colors.danger }}>Erro: Dados inválidos</Text>
+      </View>
+    );
+  }
+
+  // Obter o ícone e a cor da categoria com segurança
+  let iconInfo;
+  try {
+    iconInfo = getCategoryIcon(transaction.category || '');
+  } catch (error) {
+    console.error('Erro ao obter ícone:', error);
+    iconInfo = { name: "help-circle", color: colors.textSecondary };
+  }
 
   // Verificação de segurança para a função onPress
   const handlePress = () => {
     if (onPress && typeof onPress === 'function') {
-      // Verifique se transaction._id existe antes de chamar onPress
-      if (transaction._id) {
-        console.log('TransactionItem - Navegando para EditTransaction', transaction._id);
+      try {
         onPress();
-      } else {
-        console.error('TransactionItem - ID da transação é inválido:', transaction);
+      } catch (error) {
+        console.error('Erro ao executar onPress:', error);
+        Alert.alert('Erro', 'Ocorreu um erro ao processar esta operação.');
       }
     } else {
       console.error('TransactionItem - Função onPress não fornecida ou inválida');
@@ -68,17 +109,21 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, colors, 
   return (
     <TouchableOpacity 
       style={[styles.container, { backgroundColor: colors.card, borderColor: colors.border }]} 
-      onPress={handlePress}  // Usando a função handlePress com verificação
-      activeOpacity={0.7}    // Feedback visual melhorado
+      onPress={handlePress}
+      activeOpacity={0.7}
     >
-      <View style={[styles.iconContainer, { backgroundColor: color + '20' }]}>
-        <Ionicons name={name as any} size={20} color={color} />
+      <View style={[styles.iconContainer, { 
+        backgroundColor: `${iconInfo.color}20` 
+      }]}>
+        <Ionicons name={iconInfo.name as any} size={20} color={iconInfo.color} />
       </View>
       
       <View style={styles.detailsContainer}>
         <View style={styles.topRow}>
           <View style={styles.categoryContainer}>
-            <Text style={[styles.category, { color: colors.text }]}>{transaction.category}</Text>
+            <Text style={[styles.category, { color: colors.text }]}>
+              {transaction.category || 'Sem categoria'}
+            </Text>
             {transaction.isFixed && (
               <View style={[styles.fixedBadge, { backgroundColor: colors.primary + '20' }]}>
                 <Text style={[styles.fixedText, { color: colors.primary }]}>Fixa</Text>
@@ -99,7 +144,9 @@ const TransactionItem: React.FC<TransactionItemProps> = ({ transaction, colors, 
           <Text style={[styles.description, { color: colors.textSecondary }]}>
             {transaction.description || '(Sem descrição)'}
           </Text>
-          <Text style={[styles.date, { color: colors.textSecondary }]}>{formatDate(transaction.date)}</Text>
+          <Text style={[styles.date, { color: colors.textSecondary }]}>
+            {formatDate(transaction.date)}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>

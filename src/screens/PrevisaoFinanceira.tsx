@@ -1,23 +1,44 @@
 // src/screens/PrevisaoFinanceira.tsx
 import React, { useState, useEffect, ReactNode } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
+  View, 
+  Text, 
+  StyleSheet, 
+  TouchableOpacity, 
   ScrollView,
-  TouchableOpacity,
-  ActivityIndicator,
   Alert,
+  ActivityIndicator,
   Modal,
   TextInput
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
-import { LineChart, BarChart } from 'react-native-chart-kit';
-import { Dimensions } from 'react-native';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 
+// Importação condicional para evitar crashes
+let LineChart, BarChart;
+try {
+  const ChartKit = require('react-native-chart-kit');
+  LineChart = ChartKit.LineChart;
+  BarChart = ChartKit.BarChart;
+} catch (error) {
+  console.error("Erro ao carregar componentes de gráfico:", error);
+  // Componentes de fallback que apenas exibem texto
+  LineChart = ({ data, ...props }: { data: any, [key: string]: any }) => (
+    <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Gráfico de linha não disponível</Text>
+    </View>
+  );
+
+  BarChart = ({ data, ...props }: { data: any, [key: string]: any }) => (
+    <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
+      <Text>Gráfico de barras não disponível</Text>
+    </View>
+  );
+}
+
+import { Dimensions } from 'react-native';
 const screenWidth = Dimensions.get('window').width;
 
 interface PrevisaoItem {
@@ -50,6 +71,7 @@ const PrevisaoFinanceira = () => {
   const [forecast, setForecast] = useState<PrevisaoItem[]>([]);
   const [months, setMonths] = useState<number>(6);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'balance' | 'income' | 'expense' | 'accumulated'>('balance');
   const [chartType, setChartType] = useState<'line' | 'bar'>('line');
   const [showModal, setShowModal] = useState(false);
@@ -68,25 +90,21 @@ const PrevisaoFinanceira = () => {
   const fetchForecast = async () => {
     try {
       setLoading(true);
-      console.log('Buscando previsão financeira para', months, 'meses');
+      setError(null);
       
       const res = await api.get(`/api/forecast?months=${months}`);
-      console.log('Dados de previsão recebidos');
       
-      // Verificar se os dados estão no formato esperado
       if (!res.data || !res.data.forecast || !Array.isArray(res.data.forecast)) {
-        console.error('Formato de dados inválido:', res.data);
-        Alert.alert('Erro', 'Os dados de previsão estão em um formato inválido');
+        setError('Formato de dados inválido recebido do servidor');
         setForecast([]);
       } else {
         setForecast(res.data.forecast);
       }
-      
-      setLoading(false);
     } catch (error) {
       console.error('Erro ao buscar previsão:', error);
-      Alert.alert('Erro', 'Não foi possível carregar os dados de previsão financeira.');
+      setError('Não foi possível carregar os dados de previsão financeira.');
       setForecast([]);
+    } finally {
       setLoading(false);
     }
   };
@@ -98,285 +116,351 @@ const PrevisaoFinanceira = () => {
   const applyManualAdjustments = (originalForecast: PrevisaoItem[]): PrevisaoItem[] => {
     if (manualAdjustments.length === 0) return originalForecast;
     
-    return originalForecast.map((item, index) => {
-      const date = new Date(item.date);
-      const month = date.getMonth();
-      const year = date.getFullYear();
-      
-      const adjustment = manualAdjustments.find(
-        adj => adj.month === month && adj.year === year
-      );
-      
-      if (adjustment) {
-        const newTotalIncome = item.totalIncome + adjustment.income;
-        const newTotalExpense = item.totalExpense + adjustment.expense;
-        const newMonthlyBalance = newTotalIncome - newTotalExpense;
+    try {
+      return originalForecast.map((item, index) => {
+        const date = new Date(item.date);
+        const month = date.getMonth();
+        const year = date.getFullYear();
         
-        // Recalcular os saldos acumulados a partir deste mês
-        let newAccumulatedBalance = index === 0 
-          ? newMonthlyBalance 
-          : originalForecast[index - 1].accumulatedBalance + newMonthlyBalance;
+        const adjustment = manualAdjustments.find(
+          adj => adj.month === month && adj.year === year
+        );
         
-        return {
-          ...item,
-          totalIncome: newTotalIncome,
-          totalExpense: newTotalExpense,
-          monthlyBalance: newMonthlyBalance,
-          accumulatedBalance: newAccumulatedBalance,
-          // Incluir informação sobre o ajuste
-          adjustmentDescription: adjustment.description
-        };
-      }
-      
-      // Se não houver ajuste, recalcular o saldo acumulado se necessário
-      if (index > 0 && manualAdjustments.some(
-        adj => {
-          const prevDate = new Date(originalForecast[index - 1].date);
-          return adj.month === prevDate.getMonth() && adj.year === prevDate.getFullYear();
+        if (adjustment) {
+          const newTotalIncome = item.totalIncome + adjustment.income;
+          const newTotalExpense = item.totalExpense + adjustment.expense;
+          const newMonthlyBalance = newTotalIncome - newTotalExpense;
+          
+          // Recalcular os saldos acumulados a partir deste mês
+          let newAccumulatedBalance = index === 0 
+            ? newMonthlyBalance 
+            : originalForecast[index - 1].accumulatedBalance + newMonthlyBalance;
+          
+          return {
+            ...item,
+            totalIncome: newTotalIncome,
+            totalExpense: newTotalExpense,
+            monthlyBalance: newMonthlyBalance,
+            accumulatedBalance: newAccumulatedBalance,
+            // Incluir informação sobre o ajuste
+            adjustmentDescription: adjustment.description
+          };
         }
-      )) {
-        return {
-          ...item,
-          accumulatedBalance: originalForecast[index - 1].accumulatedBalance + item.monthlyBalance
-        };
-      }
-      
-      return item;
-    });
+        
+        // Se não houver ajuste, recalcular o saldo acumulado se necessário
+        if (index > 0 && manualAdjustments.some(
+          adj => {
+            const prevDate = new Date(originalForecast[index - 1].date);
+            return adj.month === prevDate.getMonth() && adj.year === prevDate.getFullYear();
+          }
+        )) {
+          return {
+            ...item,
+            accumulatedBalance: originalForecast[index - 1].accumulatedBalance + item.monthlyBalance
+          };
+        }
+        
+        return item;
+      });
+    } catch (e) {
+      console.error("Erro ao aplicar ajustes:", e);
+      return originalForecast;
+    }
   };
 
   const getAdjustedForecast = () => {
-    return applyManualAdjustments(forecast);
+    try {
+      return applyManualAdjustments(forecast);
+    } catch (e) {
+      console.error("Erro ao obter previsão ajustada:", e);
+      return forecast;
+    }
   };
 
   const handleAddAdjustment = () => {
     if (selectedMonthIndex === null) return;
     
-    const parsedIncome = parseFloat(adjustIncome) || 0;
-    const parsedExpense = parseFloat(adjustExpense) || 0;
-    
-    if (parsedIncome === 0 && parsedExpense === 0) {
-      Alert.alert('Aviso', 'Por favor, insira pelo menos um valor diferente de zero.');
-      return;
+    try {
+      const parsedIncome = parseFloat(adjustIncome) || 0;
+      const parsedExpense = parseFloat(adjustExpense) || 0;
+      
+      if (parsedIncome === 0 && parsedExpense === 0) {
+        Alert.alert('Aviso', 'Por favor, insira pelo menos um valor diferente de zero.');
+        return;
+      }
+      
+      const selectedMonth = forecast[selectedMonthIndex];
+      const date = new Date(selectedMonth.date);
+      
+      const newAdjustment: ManualAdjustment = {
+        month: date.getMonth(),
+        year: date.getFullYear(),
+        income: parsedIncome,
+        expense: parsedExpense,
+        description: adjustDescription || `Ajuste manual`
+      };
+      
+      // Verificar se já existe um ajuste para este mês e substituir
+      const existingIndex = manualAdjustments.findIndex(
+        adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
+      );
+      
+      if (existingIndex >= 0) {
+        const updatedAdjustments = [...manualAdjustments];
+        updatedAdjustments[existingIndex] = newAdjustment;
+        setManualAdjustments(updatedAdjustments);
+      } else {
+        setManualAdjustments([...manualAdjustments, newAdjustment]);
+      }
+      
+      // Limpar campos e fechar modal
+      setAdjustIncome('');
+      setAdjustExpense('');
+      setAdjustDescription('');
+      setShowModal(false);
+    } catch (e) {
+      console.error("Erro ao adicionar ajuste:", e);
+      Alert.alert('Erro', 'Ocorreu um erro ao adicionar o ajuste.');
     }
-    
-    const selectedMonth = forecast[selectedMonthIndex];
-    const date = new Date(selectedMonth.date);
-    
-    const newAdjustment: ManualAdjustment = {
-      month: date.getMonth(),
-      year: date.getFullYear(),
-      income: parsedIncome,
-      expense: parsedExpense,
-      description: adjustDescription || `Ajuste manual`
-    };
-    
-    // Verificar se já existe um ajuste para este mês e substituir
-    const existingIndex = manualAdjustments.findIndex(
-      adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
-    );
-    
-    if (existingIndex >= 0) {
-      const updatedAdjustments = [...manualAdjustments];
-      updatedAdjustments[existingIndex] = newAdjustment;
-      setManualAdjustments(updatedAdjustments);
-    } else {
-      setManualAdjustments([...manualAdjustments, newAdjustment]);
-    }
-    
-    // Limpar campos e fechar modal
-    setAdjustIncome('');
-    setAdjustExpense('');
-    setAdjustDescription('');
-    setShowModal(false);
   };
 
   const getChartData = () => {
-    const adjustedForecast = getAdjustedForecast();
-    if (!adjustedForecast.length) return { labels: [], datasets: [{ data: [] }] };
-    
-    const labels = adjustedForecast.map(item => {
-      const date = new Date(item.date);
-      const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-      return `${monthNames[date.getMonth()]}`;
-    });
-    
-    let data: number[] = [];
-    let color: string;
-    
-    switch (activeTab) {
-      case 'balance':
-        data = adjustedForecast.map(item => item.monthlyBalance);
-        color = colors.primary;
-        break;
-      case 'income':
-        data = adjustedForecast.map(item => item.totalIncome);
-        color = colors.success;
-        break;
-      case 'expense':
-        data = adjustedForecast.map(item => item.totalExpense);
-        color = colors.danger;
-        break;
-      case 'accumulated':
-        data = adjustedForecast.map(item => item.accumulatedBalance);
-        color = data[data.length - 1] >= 0 ? colors.success : colors.danger;
-        break;
+    try {
+      const adjustedForecast = getAdjustedForecast();
+      if (!adjustedForecast.length) return { labels: [], datasets: [{ data: [0] }] };
+      
+      const labels = adjustedForecast.map(item => {
+        const date = new Date(item.date);
+        const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        return `${monthNames[date.getMonth()]}`;
+      });
+      
+      let data: number[] = [];
+      
+      switch (activeTab) {
+        case 'balance':
+          data = adjustedForecast.map(item => item.monthlyBalance);
+          break;
+        case 'income':
+          data = adjustedForecast.map(item => item.totalIncome);
+          break;
+        case 'expense':
+          data = adjustedForecast.map(item => item.totalExpense);
+          break;
+        case 'accumulated':
+          data = adjustedForecast.map(item => item.accumulatedBalance);
+          break;
+      }
+      
+      return {
+        labels,
+        datasets: [
+          {
+            data: data.length ? data : [0],
+            color: (opacity = 1) => {
+              if (activeTab === 'balance' || activeTab === 'accumulated') {
+                return data[data.length - 1] >= 0 ? colors.success : colors.danger;
+              }
+              return activeTab === 'income' ? colors.success : colors.danger;
+            },
+            strokeWidth: 2
+          }
+        ],
+        legend: [
+          `${
+            activeTab === 'balance' ? 'Saldo Mensal' : 
+            activeTab === 'income' ? 'Receitas' : 
+            activeTab === 'expense' ? 'Despesas' : 
+            'Saldo Acumulado'
+          }`
+        ]
+      };
+    } catch (e) {
+      console.error("Erro ao obter dados do gráfico:", e);
+      return { labels: [], datasets: [{ data: [0] }] };
     }
-    
-    return {
-      labels,
-      datasets: [
-        {
-          data: data.length ? data : [0],
-          color: (opacity = 1) => {
-            if (activeTab === 'balance' || activeTab === 'accumulated') {
-              return data[data.length - 1] >= 0 ? colors.success : colors.danger;
-            }
-            return activeTab === 'income' ? colors.success : colors.danger;
-          },
-          strokeWidth: 2
-        }
-      ],
-      legend: [
-        `${
-          activeTab === 'balance' ? 'Saldo Mensal' : 
-          activeTab === 'income' ? 'Receitas' : 
-          activeTab === 'expense' ? 'Despesas' : 
-          'Saldo Acumulado'
-        }`
-      ]
-    };
   };
 
-  const getFixedVsVariableData = (selectedIndex: number) => {
-    if (!forecast.length || selectedIndex >= forecast.length) return null;
-    
-    const item = forecast[selectedIndex];
-    
-    return {
-      labels: ["Fixo", "Variável"],
-      datasets: [
-        {
-          data: [item.fixedIncome, item.variableIncome],
-          color: () => colors.success
+  const renderChart = () => {
+    try {
+      const chartData = getChartData();
+      
+      const chartConfig = {
+        backgroundColor: colors.card,
+        backgroundGradientFrom: colors.card,
+        backgroundGradientTo: colors.card,
+        decimalPlaces: 0,
+        color: (opacity = 1) => isDark ? '#fff' : '#333',
+        labelColor: (opacity = 1) => colors.text,
+        style: {
+          borderRadius: 16,
         },
-        {
-          data: [item.fixedExpense, item.variableExpense],
-          color: () => colors.danger
-        }
-      ],
-      legend: ["Receitas", "Despesas"]
-    };
+        propsForDots: {
+          r: '6',
+          strokeWidth: '2',
+          stroke: activeTab === 'income' ? colors.success : 
+                  activeTab === 'expense' ? colors.danger : colors.primary
+        },
+      };
+      
+      const chartStyle = {
+        marginVertical: 8,
+        borderRadius: 16,
+      };
+      
+      if (chartType === 'line' && LineChart) {
+        return (
+          <LineChart
+            data={chartData}
+            width={screenWidth - 40}
+            height={220}
+            chartConfig={chartConfig}
+            bezier
+            style={chartStyle}
+          />
+        );
+      } else if (chartType === 'bar' && BarChart) {
+        return (
+          <BarChart
+            data={chartData}
+            width={screenWidth - 40}
+            height={220}
+            chartConfig={chartConfig}
+            style={chartStyle}
+            fromZero
+            yAxisLabel={''}
+            yAxisSuffix={''}
+          />
+        );
+      } else {
+        return (
+          <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
+            <Text style={{ color: colors.text }}>Gráfico não disponível</Text>
+          </View>
+        );
+      }
+    } catch (e) {
+      console.error("Erro ao renderizar gráfico:", e);
+      return (
+        <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
+          <Text style={{ color: colors.text }}>Erro ao carregar gráfico</Text>
+        </View>
+      );
+    }
   };
 
   const getBreakdownData = (item: PrevisaoItem, type: 'income' | 'expense') => {
-    const breakdown = type === 'income' ? item.incomeBreakdown : item.expenseBreakdown;
-    return Object.entries(breakdown)
-      .sort((a, b) => b[1] - a[1]) // Ordenar por valor decrescente
-      .map(([category, value]) => ({
-        category,
-        value,
-        percentage: (value / (type === 'income' ? item.totalIncome : item.totalExpense)) * 100
-      }));
+    try {
+      const breakdown = type === 'income' ? item.incomeBreakdown : item.expenseBreakdown;
+      return Object.entries(breakdown)
+        .sort((a, b) => b[1] - a[1]) // Ordenar por valor decrescente
+        .map(([category, value]) => ({
+          category,
+          value,
+          percentage: (value / (type === 'income' ? item.totalIncome : item.totalExpense)) * 100
+        }));
+    } catch (e) {
+      console.error("Erro ao obter dados de breakdown:", e);
+      return [];
+    }
   };
 
   const renderAdjustmentModal = () => {
     if (selectedMonthIndex === null || !forecast[selectedMonthIndex]) return null;
     
-    const selectedMonth = forecast[selectedMonthIndex];
-    const date = new Date(selectedMonth.date);
-    const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
-                       'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-    
-    // Verificar se já existe um ajuste para este mês
-    const existingAdjustment = manualAdjustments.find(
-      adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
-    );
-    
-    if (existingAdjustment) {
-      setAdjustIncome(existingAdjustment.income.toString());
-      setAdjustExpense(existingAdjustment.expense.toString());
-      setAdjustDescription(existingAdjustment.description);
-    }
-    
-    return (
-      <Modal
-        visible={showModal}
-        transparent
-        animationType="slide"
-        onRequestClose={() => setShowModal(false)}
-      >
-        <View style={styles.modalOverlay}>
-          <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>
-              Ajustar {monthNames[date.getMonth()]} {date.getFullYear()}
-            </Text>
-            
-            <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-              Ajuste de Receita (+ ou -)
-            </Text>
-            <View style={[styles.modalInputContainer, { borderColor: colors.border }]}>
-              <Text style={{ color: colors.textSecondary }}>R$</Text>
+    try {
+      const selectedMonth = forecast[selectedMonthIndex];
+      const date = new Date(selectedMonth.date);
+      const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
+                         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+      
+      // Verificar se já existe um ajuste para este mês
+      const existingAdjustment = manualAdjustments.find(
+        adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
+      );
+      
+      return (
+        <Modal
+          visible={showModal}
+          transparent
+          animationType="slide"
+          onRequestClose={() => setShowModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
+              <Text style={[styles.modalTitle, { color: colors.text }]}>
+                Ajustar {monthNames[date.getMonth()]} {date.getFullYear()}
+              </Text>
+              
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
+                Ajuste de Receita (+ ou -)
+              </Text>
+              <View style={[styles.modalInputContainer, { borderColor: colors.border }]}>
+                <Text style={{ color: colors.textSecondary }}>R$</Text>
+                <TextInput
+                  style={[styles.modalInput, { color: colors.text }]}
+                  value={adjustIncome}
+                  onChangeText={setAdjustIncome}
+                  keyboardType="numeric"
+                  placeholder="0,00"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+              
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
+                Ajuste de Despesa (+ ou -)
+              </Text>
+              <View style={[styles.modalInputContainer, { borderColor: colors.border }]}>
+                <Text style={{ color: colors.textSecondary }}>R$</Text>
+                <TextInput
+                  style={[styles.modalInput, { color: colors.text }]}
+                  value={adjustExpense}
+                  onChangeText={setAdjustExpense}
+                  keyboardType="numeric"
+                  placeholder="0,00"
+                  placeholderTextColor={colors.textSecondary}
+                />
+              </View>
+              
+              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
+                Descrição do Ajuste
+              </Text>
               <TextInput
-                style={[styles.modalInput, { color: colors.text }]}
-                value={adjustIncome}
-                onChangeText={setAdjustIncome}
-                keyboardType="numeric"
-                placeholder="0,00"
+                style={[styles.modalDescription, { color: colors.text, borderColor: colors.border }]}
+                value={adjustDescription}
+                onChangeText={setAdjustDescription}
+                placeholder="Ex: Bônus esperado, Viagem planejada..."
                 placeholderTextColor={colors.textSecondary}
+                multiline
               />
-            </View>
-            
-            <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-              Ajuste de Despesa (+ ou -)
-            </Text>
-            <View style={[styles.modalInputContainer, { borderColor: colors.border }]}>
-              <Text style={{ color: colors.textSecondary }}>R$</Text>
-              <TextInput
-                style={[styles.modalInput, { color: colors.text }]}
-                value={adjustExpense}
-                onChangeText={setAdjustExpense}
-                keyboardType="numeric"
-                placeholder="0,00"
-                placeholderTextColor={colors.textSecondary}
-              />
-            </View>
-            
-            <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-              Descrição do Ajuste
-            </Text>
-            <TextInput
-              style={[styles.modalDescription, { color: colors.text, borderColor: colors.border }]}
-              value={adjustDescription}
-              onChangeText={setAdjustDescription}
-              placeholder="Ex: Bônus esperado, Viagem planejada..."
-              placeholderTextColor={colors.textSecondary}
-              multiline
-            />
-            
-            <View style={styles.modalButtons}>
-              <TouchableOpacity 
-                style={[styles.modalButton, { borderColor: colors.border }]} 
-                onPress={() => {
-                  setAdjustIncome('');
-                  setAdjustExpense('');
-                  setAdjustDescription('');
-                  setShowModal(false);
-                }}
-              >
-                <Text style={{ color: colors.text }}>Cancelar</Text>
-              </TouchableOpacity>
-              <TouchableOpacity 
-                style={[styles.modalButton, { backgroundColor: colors.primary }]} 
-                onPress={handleAddAdjustment}
-              >
-                <Text style={{ color: '#fff' }}>Salvar</Text>
-              </TouchableOpacity>
+              
+              <View style={styles.modalButtons}>
+                <TouchableOpacity 
+                  style={[styles.modalButton, { borderColor: colors.border }]} 
+                  onPress={() => {
+                    setAdjustIncome('');
+                    setAdjustExpense('');
+                    setAdjustDescription('');
+                    setShowModal(false);
+                  }}
+                >
+                  <Text style={{ color: colors.text }}>Cancelar</Text>
+                </TouchableOpacity>
+                <TouchableOpacity 
+                  style={[styles.modalButton, { backgroundColor: colors.primary }]} 
+                  onPress={handleAddAdjustment}
+                >
+                  <Text style={{ color: '#fff' }}>Salvar</Text>
+                </TouchableOpacity>
+              </View>
             </View>
           </View>
-        </View>
-      </Modal>
-    );
+        </Modal>
+      );
+    } catch (e) {
+      console.error("Erro ao renderizar modal de ajuste:", e);
+      return null;
+    }
   };
 
   return (
@@ -520,6 +604,17 @@ const PrevisaoFinanceira = () => {
           <ActivityIndicator size="large" color={colors.primary} />
           <Text style={[styles.loadingText, { color: colors.text }]}>Carregando dados...</Text>
         </View>
+      ) : error ? (
+        <View style={styles.errorContainer}>
+          <Ionicons name={"alert-circle-outline" as any} size={48} color={colors.danger} />
+          <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+          <TouchableOpacity 
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={fetchForecast}
+          >
+            <Text style={{ color: '#fff' }}>Tentar Novamente</Text>
+          </TouchableOpacity>
+        </View>
       ) : forecast.length === 0 ? (
         <View style={styles.emptyContainer}>
           <Ionicons name={"calculator-outline" as any} size={60} color={colors.primary} />
@@ -533,66 +628,7 @@ const PrevisaoFinanceira = () => {
       ) : (
         <ScrollView>
           <View style={styles.chartContainer}>
-            {chartType === 'line' ? (
-              <LineChart
-                data={getChartData()}
-                width={screenWidth - 40}
-                height={220}
-                chartConfig={{
-                  backgroundColor: colors.card,
-                  backgroundGradientFrom: colors.card,
-                  backgroundGradientTo: colors.card,
-                  decimalPlaces: 0,
-                  color: (opacity = 1) => isDark ? '#fff' : '#333',
-                  labelColor: (opacity = 1) => colors.text,
-                  style: {
-                    borderRadius: 16,
-                  },
-                  propsForDots: {
-                    r: '6',
-                    strokeWidth: '2',
-                    stroke: activeTab === 'income' ? colors.success : 
-                            activeTab === 'expense' ? colors.danger : colors.primary
-                  },
-                }}
-                bezier
-                style={{
-                  marginVertical: 8,
-                  borderRadius: 16,
-                }}
-              />
-            ) : (
-              <BarChart
-                data={getChartData()}
-                width={screenWidth - 40}
-                height={220}
-                chartConfig={{
-                  backgroundColor: colors.card,
-                  backgroundGradientFrom: colors.card,
-                  backgroundGradientTo: colors.card,
-                  decimalPlaces: 0,
-                  color: (opacity = 1) => {
-                    if (activeTab === 'balance' || activeTab === 'accumulated') {
-                      return getChartData().datasets[0].data[getChartData().datasets[0].data.length - 1] >= 0
-                        ? colors.success
-                        : colors.danger;
-                    }
-                    return activeTab === 'income' ? colors.success : colors.danger;
-                  },
-                  labelColor: (opacity = 1) => colors.text,
-                  style: {
-                    borderRadius: 16,
-                  },
-                }}
-                style={{
-                  marginVertical: 8,
-                  borderRadius: 16,
-                }}
-                fromZero 
-                yAxisLabel={''} 
-                yAxisSuffix={''}
-              />
-            )}
+            {renderChart()}
           </View>
 
           <View style={[styles.forecastListContainer, { backgroundColor: colors.background }]}>
@@ -601,236 +637,245 @@ const PrevisaoFinanceira = () => {
             </Text>
             
             {getAdjustedForecast().map((item, index) => {
-              const date = new Date(item.date);
-              const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
-                                 'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-              
-              // Verificar se há ajuste manual para este mês
-              const hasAdjustment = manualAdjustments.some(
-                adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
-              );
-              
-              return (
-                <View 
-                  key={index} 
-                  style={[
-                    styles.forecastItem, 
-                    { backgroundColor: colors.card, borderColor: colors.border },
-                    index === forecast.length - 1 && { marginBottom: 20 }
-                  ]}
-                >
-                  <View style={styles.forecastMonthHeader}>
-                    <Text style={[styles.forecastMonth, { color: colors.text }]}>
-                      {monthNames[date.getMonth()]} {date.getFullYear()}
-                    </Text>
-                    
-                    <TouchableOpacity
-                      style={[styles.adjustButton, { backgroundColor: hasAdjustment ? colors.primary + '40' : 'transparent' }]}
-                      onPress={() => {
-                        setSelectedMonthIndex(index);
-                        setShowModal(true);
-                      }}
-                    >
-                      <Ionicons 
-                        name={"pencil" as any} 
-                        size={16} 
-                        color={hasAdjustment ? colors.primary : colors.textSecondary} 
-                      />
-                      <Text style={{ 
-                        color: hasAdjustment ? colors.primary : colors.textSecondary,
-                        fontSize: 12,
-                        marginLeft: 5
-                      }}>
-                        {hasAdjustment ? 'Ajustado' : 'Ajustar'}
+              try {
+                const date = new Date(item.date);
+                const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
+                                    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
+                
+                // Verificar se há ajuste manual para este mês
+                const hasAdjustment = manualAdjustments.some(
+                  adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
+                );
+                
+                return (
+                  <View 
+                    key={index} 
+                    style={[
+                      styles.forecastItem, 
+                      { backgroundColor: colors.card, borderColor: colors.border },
+                      index === forecast.length - 1 && { marginBottom: 20 }
+                    ]}
+                  >
+                    <View style={styles.forecastMonthHeader}>
+                      <Text style={[styles.forecastMonth, { color: colors.text }]}>
+                        {monthNames[date.getMonth()]} {date.getFullYear()}
                       </Text>
-                    </TouchableOpacity>
-                  </View>
-                  
-                  {item.adjustmentDescription && (
-                    <View style={[styles.adjustmentNote, { backgroundColor: colors.primary + '20' }]}>
-                      <Text style={{ color: colors.primary, fontSize: 12 }}>
-                        <Ionicons name={"information-circle" as any} size={12} color={colors.primary} /> 
-                        {' '}Ajuste: {item.adjustmentDescription}
-                      </Text>
-                    </View>
-                  )}
-                  
-                  <View style={styles.forecastOverview}>
-                    <View style={styles.forecastStat}>
-                      <Text style={[styles.forecastStatLabel, { color: colors.textSecondary }]}>
-                        Receitas
-                      </Text>
-                      <Text style={[styles.forecastStatValue, { color: colors.success }]}>
-                        {formatCurrency(item.totalIncome)}
-                      </Text>
+                      
+                      <TouchableOpacity
+                        style={[styles.adjustButton, { backgroundColor: hasAdjustment ? colors.primary + '40' : 'transparent' }]}
+                        onPress={() => {
+                          setSelectedMonthIndex(index);
+                          setShowModal(true);
+                        }}
+                      >
+                        <Ionicons 
+                          name={"pencil" as any} 
+                          size={16} 
+                          color={hasAdjustment ? colors.primary : colors.textSecondary} 
+                        />
+                        <Text style={{ 
+                          color: hasAdjustment ? colors.primary : colors.textSecondary,
+                          fontSize: 12,
+                          marginLeft: 5
+                        }}>
+                          {hasAdjustment ? 'Ajustado' : 'Ajustar'}
+                        </Text>
+                      </TouchableOpacity>
                     </View>
                     
-                    <View style={styles.forecastStat}>
-                      <Text style={[styles.forecastStatLabel, { color: colors.textSecondary }]}>
-                        Despesas
+                    {item.adjustmentDescription && (
+                      <View style={[styles.adjustmentNote, { backgroundColor: colors.primary + '20' }]}>
+                        <Text style={{ color: colors.primary, fontSize: 12 }}>
+                          <Ionicons name={"information-circle" as any} size={12} color={colors.primary} /> 
+                          {' '}Ajuste: {item.adjustmentDescription}
+                        </Text>
+                      </View>
+                    )}
+                    
+                    <View style={styles.forecastOverview}>
+                      <View style={styles.forecastStat}>
+                        <Text style={[styles.forecastStatLabel, { color: colors.textSecondary }]}>
+                          Receitas
+                        </Text>
+                        <Text style={[styles.forecastStatValue, { color: colors.success }]}>
+                          {formatCurrency(item.totalIncome)}
+                        </Text>
+                      </View>
+                      
+                      <View style={styles.forecastStat}>
+                        <Text style={[styles.forecastStatLabel, { color: colors.textSecondary }]}>
+                          Despesas
+                        </Text>
+                        <Text style={[styles.forecastStatValue, { color: colors.danger }]}>
+                          {formatCurrency(item.totalExpense)}
+                        </Text>
+                      </View>
+                      
+                      <View style={styles.forecastStat}>
+                        <Text style={[styles.forecastStatLabel, { color: colors.textSecondary }]}>
+                          Saldo
+                        </Text>
+                        <Text style={[styles.forecastStatValue, { 
+                          color: item.monthlyBalance >= 0 ? colors.success : colors.danger 
+                        }]}>
+                          {formatCurrency(item.monthlyBalance)}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.fixedVsVariableContainer}>
+                      <Text style={[styles.breakdownTitle, { color: colors.text }]}>
+                        Fixo vs. Variável
                       </Text>
-                      <Text style={[styles.forecastStatValue, { color: colors.danger }]}>
-                        {formatCurrency(item.totalExpense)}
-                      </Text>
+                      <View style={styles.fixedVsVariableGrid}>
+                        <View style={styles.fixedVsVariableColumn}>
+                          <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
+                            Receitas Fixas
+                          </Text>
+                          <Text style={[styles.fixedVsVariableValue, { color: colors.success }]}>
+                            {formatCurrency(item.fixedIncome)}
+                          </Text>
+                          <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
+                            {(item.fixedIncome / (item.totalIncome || 1) * 100).toFixed(0)}%
+                          </Text>
+                        </View>
+
+                        <View style={styles.fixedVsVariableColumn}>
+                          <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
+                            Receitas Variáveis
+                          </Text>
+                          <Text style={[styles.fixedVsVariableValue, { color: colors.success }]}>
+                            {formatCurrency(item.variableIncome)}
+                          </Text>
+                          <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
+                            {(item.variableIncome / (item.totalIncome || 1) * 100).toFixed(0)}%
+                          </Text>
+                        </View>
+
+                        <View style={styles.fixedVsVariableColumn}>
+                          <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
+                            Despesas Fixas
+                          </Text>
+                          <Text style={[styles.fixedVsVariableValue, { color: colors.danger }]}>
+                            {formatCurrency(item.fixedExpense)}
+                          </Text>
+                          <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
+                            {(item.fixedExpense / (item.totalExpense || 1) * 100).toFixed(0)}%
+                          </Text>
+                        </View>
+
+                        <View style={styles.fixedVsVariableColumn}>
+                          <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
+                            Despesas Variáveis
+                          </Text>
+                          <Text style={[styles.fixedVsVariableValue, { color: colors.danger }]}>
+                            {formatCurrency(item.variableExpense)}
+                          </Text>
+                          <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
+                            {(item.variableExpense / (item.totalExpense || 1) * 100).toFixed(0)}%
+                          </Text>
+                        </View>
+                      </View>
                     </View>
                     
-                    <View style={styles.forecastStat}>
-                      <Text style={[styles.forecastStatLabel, { color: colors.textSecondary }]}>
-                        Saldo
+                    <View style={styles.breakdownContainer}>
+                      <View style={styles.breakdownSection}>
+                        <Text style={[styles.breakdownTitle, { color: colors.text }]}>
+                          Principais Receitas
+                        </Text>
+                        {getBreakdownData(item, 'income').slice(0, 3).length > 0 ? (
+                          getBreakdownData(item, 'income').slice(0, 3).map((breakdown, idx) => (
+                            <View key={idx} style={styles.breakdownItem}>
+                              <View style={styles.breakdownCategory}>
+                                <Text style={[styles.breakdownCategoryText, { color: colors.text }]} numberOfLines={1}>
+                                  {breakdown.category}
+                                </Text>
+                                <Text style={[styles.breakdownPercentage, { color: colors.textSecondary }]}>
+                                  {breakdown.percentage.toFixed(0)}%
+                                </Text>
+                              </View>
+                              <View style={styles.breakdownBarContainer}>
+                                <View 
+                                  style={[
+                                    styles.breakdownBar, 
+                                    { 
+                                      width: `${breakdown.percentage}%`, 
+                                      backgroundColor: colors.success 
+                                    }
+                                  ]} 
+                                />
+                              </View>
+                              <Text style={[styles.breakdownValue, { color: colors.success }]}>
+                                {formatCurrency(breakdown.value)}
+                              </Text>
+                            </View>
+                          ))
+                        ) : (
+                          <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
+                            Sem dados de receitas
+                          </Text>
+                        )}
+                      </View>
+                      
+                      <View style={styles.breakdownSection}>
+                        <Text style={[styles.breakdownTitle, { color: colors.text }]}>
+                          Principais Despesas
+                        </Text>
+                        {getBreakdownData(item, 'expense').slice(0, 3).length > 0 ? (
+                          getBreakdownData(item, 'expense').slice(0, 3).map((breakdown, idx) => (
+                            <View key={idx} style={styles.breakdownItem}>
+                              <View style={styles.breakdownCategory}>
+                                <Text style={[styles.breakdownCategoryText, { color: colors.text }]} numberOfLines={1}>
+                                  {breakdown.category}
+                                </Text>
+                                <Text style={[styles.breakdownPercentage, { color: colors.textSecondary }]}>
+                                  {breakdown.percentage.toFixed(0)}%
+                                </Text>
+                              </View>
+                              <View style={styles.breakdownBarContainer}>
+                                <View 
+                                  style={[
+                                    styles.breakdownBar, 
+                                    { 
+                                      width: `${breakdown.percentage}%`, 
+                                      backgroundColor: colors.danger 
+                                    }
+                                  ]} 
+                                />
+                              </View>
+                              <Text style={[styles.breakdownValue, { color: colors.danger }]}>
+                                {formatCurrency(breakdown.value)}
+                              </Text>
+                            </View>
+                          ))
+                        ) : (
+                          <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
+                            Sem dados de despesas
+                          </Text>
+                        )}
+                      </View>
+                    </View>
+                    
+                    <View style={styles.accumulatedContainer}>
+                      <Text style={[styles.accumulatedLabel, { color: colors.textSecondary }]}>
+                        Saldo Acumulado
                       </Text>
-                      <Text style={[styles.forecastStatValue, { 
-                        color: item.monthlyBalance >= 0 ? colors.success : colors.danger 
+                      <Text style={[styles.accumulatedValue, { 
+                        color: item.accumulatedBalance >= 0 ? colors.success : colors.danger 
                       }]}>
-                        {formatCurrency(item.monthlyBalance)}
+                        {formatCurrency(item.accumulatedBalance)}
                       </Text>
                     </View>
                   </View>
-
-                  <View style={styles.fixedVsVariableContainer}>
-                    <Text style={[styles.breakdownTitle, { color: colors.text }]}>
-                      Fixo vs. Variável
-                    </Text>
-                    <View style={styles.fixedVsVariableGrid}>
-                      <View style={styles.fixedVsVariableColumn}>
-                        <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
-                          Receitas Fixas
-                        </Text>
-                        <Text style={[styles.fixedVsVariableValue, { color: colors.success }]}>
-                          {formatCurrency(item.fixedIncome)}
-                        </Text>
-                        <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
-                          {(item.fixedIncome / item.totalIncome * 100).toFixed(0)}%
-                        </Text>
-                      </View>
-
-                      <View style={styles.fixedVsVariableColumn}>
-                        <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
-                          Receitas Variáveis
-                        </Text>
-                        <Text style={[styles.fixedVsVariableValue, { color: colors.success }]}>
-                          {formatCurrency(item.variableIncome)}
-                        </Text>
-                        <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
-                          {(item.variableIncome / item.totalIncome * 100).toFixed(0)}%
-                        </Text>
-                      </View>
-
-                      <View style={styles.fixedVsVariableColumn}>
-                        <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
-                          Despesas Fixas
-                        </Text>
-                        <Text style={[styles.fixedVsVariableValue, { color: colors.danger }]}>
-                          {formatCurrency(item.fixedExpense)}
-                        </Text>
-                        <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
-                          {(item.fixedExpense / item.totalExpense * 100).toFixed(0)}%
-                        </Text>
-                      </View>
-
-                      <View style={styles.fixedVsVariableColumn}>
-                        <Text style={[styles.fixedVsVariableLabel, { color: colors.textSecondary }]}>
-                          Despesas Variáveis
-                        </Text>
-                        <Text style={[styles.fixedVsVariableValue, { color: colors.danger }]}>
-                          {formatCurrency(item.variableExpense)}
-                        </Text>
-                        <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
-                          {(item.variableExpense / item.totalExpense * 100).toFixed(0)}%
-                        </Text>
-                      </View>
-                    </View>
+                );
+              } catch (e) {
+                console.error("Erro ao renderizar item de previsão:", e, index);
+                return (
+                  <View key={index} style={[styles.forecastItem, { backgroundColor: colors.card, borderColor: colors.border }]}>
+                    <Text style={{ color: colors.danger }}>Erro ao carregar dados deste mês</Text>
                   </View>
-                  
-                  <View style={styles.breakdownContainer}>
-                    <View style={styles.breakdownSection}>
-                      <Text style={[styles.breakdownTitle, { color: colors.text }]}>
-                        Principais Receitas
-                      </Text>
-                      {getBreakdownData(item, 'income').slice(0, 3).length > 0 ? (
-                        getBreakdownData(item, 'income').slice(0, 3).map((breakdown, idx) => (
-                          <View key={idx} style={styles.breakdownItem}>
-                            <View style={styles.breakdownCategory}>
-                              <Text style={[styles.breakdownCategoryText, { color: colors.text }]} numberOfLines={1}>
-                                {breakdown.category}
-                              </Text>
-                              <Text style={[styles.breakdownPercentage, { color: colors.textSecondary }]}>
-                                {breakdown.percentage.toFixed(0)}%
-                              </Text>
-                            </View>
-                            <View style={styles.breakdownBarContainer}>
-                              <View 
-                                style={[
-                                  styles.breakdownBar, 
-                                  { 
-                                    width: `${breakdown.percentage}%`, 
-                                    backgroundColor: colors.success 
-                                  }
-                                ]} 
-                              />
-                            </View>
-                            <Text style={[styles.breakdownValue, { color: colors.success }]}>
-                              {formatCurrency(breakdown.value)}
-                            </Text>
-                          </View>
-                        ))
-                      ) : (
-                        <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
-                          Sem dados de receitas
-                        </Text>
-                      )}
-                    </View>
-                    
-                    <View style={styles.breakdownSection}>
-                      <Text style={[styles.breakdownTitle, { color: colors.text }]}>
-                        Principais Despesas
-                      </Text>
-                      {getBreakdownData(item, 'expense').slice(0, 3).length > 0 ? (
-                        getBreakdownData(item, 'expense').slice(0, 3).map((breakdown, idx) => (
-                          <View key={idx} style={styles.breakdownItem}>
-                            <View style={styles.breakdownCategory}>
-                              <Text style={[styles.breakdownCategoryText, { color: colors.text }]} numberOfLines={1}>
-                                {breakdown.category}
-                              </Text>
-                              <Text style={[styles.breakdownPercentage, { color: colors.textSecondary }]}>
-                                {breakdown.percentage.toFixed(0)}%
-                              </Text>
-                            </View>
-                            <View style={styles.breakdownBarContainer}>
-                              <View 
-                                style={[
-                                  styles.breakdownBar, 
-                                  { 
-                                    width: `${breakdown.percentage}%`, 
-                                    backgroundColor: colors.danger 
-                                  }
-                                ]} 
-                              />
-                            </View>
-                            <Text style={[styles.breakdownValue, { color: colors.danger }]}>
-                              {formatCurrency(breakdown.value)}
-                            </Text>
-                          </View>
-                        ))
-                      ) : (
-                        <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
-                          Sem dados de despesas
-                        </Text>
-                      )}
-                    </View>
-                  </View>
-                  
-                  <View style={styles.accumulatedContainer}>
-                    <Text style={[styles.accumulatedLabel, { color: colors.textSecondary }]}>
-                      Saldo Acumulado
-                    </Text>
-                    <Text style={[styles.accumulatedValue, { 
-                      color: item.accumulatedBalance >= 0 ? colors.success : colors.danger 
-                    }]}>
-                      {formatCurrency(item.accumulatedBalance)}
-                    </Text>
-                  </View>
-                </View>
-              );
+                );
+              }
             })}
           </View>
         </ScrollView>
@@ -913,6 +958,23 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
+  },
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 40,
+  },
+  errorText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  retryButton: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 8,
   },
   emptyContainer: {
     flex: 1,

@@ -15,7 +15,6 @@ import { RouteProp, useNavigation, useRoute } from '@react-navigation/native';
 import { StackNavigationProp } from '@react-navigation/stack';
 import { Ionicons } from '@expo/vector-icons';
 import DateTimePicker from '@react-native-community/datetimepicker';
-import { Picker } from '@react-native-picker/picker';
 import { useTheme } from '../context/ThemeContext';
 import { Transaction } from '../types';
 import { RootStackParamList } from '../types/navigation';
@@ -24,19 +23,20 @@ import api from '../services/api';
 type EditTransactionScreenNavigationProp = StackNavigationProp<RootStackParamList, 'EditTransaction'>;
 type EditTransactionScreenRouteProp = RouteProp<RootStackParamList, 'EditTransaction'>;
 
+// Componente principal
 const EditTransaction = () => {
   const navigation = useNavigation<EditTransactionScreenNavigationProp>();
   const route = useRoute<EditTransactionScreenRouteProp>();
   const { colors } = useTheme();
   
-  const { transactionId } = route.params;
+  const { transactionId } = route.params || {};
   
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [transaction, setTransaction] = useState<Transaction | null>(null);
+  const [error, setError] = useState<string | null>(null);
   
-  // Estados para formulário
-  const [amount, setAmount] = useState('');
+  // Estados para formulário - com valores padrão seguros
+  const [amount, setAmount] = useState('0');
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [category, setCategory] = useState('');
   const [description, setDescription] = useState('');
@@ -48,63 +48,78 @@ const EditTransaction = () => {
   const incomeCategories = ['Salário', 'Investimento', 'Freelance', 'Bônus', 'Outros'];
   const expenseCategories = ['Alimentação', 'Moradia', 'Transporte', 'Saúde', 'Educação', 'Lazer', 'Outros'];
 
+  // Verificar se temos um ID válido
   useEffect(() => {
+    if (!transactionId) {
+      setError('ID da transação não fornecido');
+      setLoading(false);
+      return;
+    }
+    
     fetchTransaction();
   }, [transactionId]);
 
   const fetchTransaction = async () => {
     try {
       setLoading(true);
-      console.log('Buscando transação com ID:', transactionId);
+      setError(null);
       
       if (!transactionId) {
-        console.error('ID da transação é undefined ou nulo');
-        Alert.alert(
-          'Erro', 
-          'ID da transação inválido. Retornando à tela anterior.',
-          [{ text: 'OK', onPress: () => navigation.goBack() }]
-        );
-        return;
+        throw new Error('ID da transação é undefined ou nulo');
       }
       
+      console.log('Buscando transação com ID:', transactionId);
       const response = await api.get(`/api/transactions/${transactionId}`);
-      const transactionData = response.data;
       
+      if (!response || !response.data) {
+        throw new Error('Resposta inválida do servidor');
+      }
+      
+      const transactionData = response.data;
       console.log('Transação carregada:', transactionData);
       
-      setTransaction(transactionData);
-      
       // Preencher o formulário com os dados da transação
-      setAmount(transactionData.amount.toString());
-      setType(transactionData.type);
-      setCategory(transactionData.category);
+      setAmount(transactionData.amount?.toString() || '0');
+      setType(transactionData.type || 'expense');
+      setCategory(transactionData.category || '');
       setDescription(transactionData.description || '');
       setIsFixed(transactionData.isFixed || false);
-      setDate(new Date(transactionData.date));
+      
+      // Tratar a data com segurança
+      try {
+        setDate(new Date(transactionData.date));
+      } catch (e) {
+        console.error('Erro ao processar data:', e);
+        setDate(new Date());
+      }
+      
     } catch (error) {
       console.error('Erro ao buscar transação:', error);
-      Alert.alert(
-        'Erro', 
-        'Não foi possível carregar os dados da transação. Retornando à tela anterior.',
-        [{ text: 'OK', onPress: () => navigation.goBack() }]
-      );
+      setError('Não foi possível carregar os dados da transação');
     } finally {
       setLoading(false);
     }
   };
 
   const handleSave = async () => {
-    if (!amount || parseFloat(amount) <= 0) {
-      Alert.alert('Erro', 'Por favor, informe um valor válido');
-      return;
-    }
-
-    if (!category) {
-      Alert.alert('Erro', 'Por favor, selecione uma categoria');
-      return;
-    }
-
     try {
+      // Validações
+      if (!amount || parseFloat(amount) <= 0) {
+        Alert.alert('Erro', 'Por favor, informe um valor válido');
+        return;
+      }
+
+      if (!category) {
+        Alert.alert('Erro', 'Por favor, selecione uma categoria');
+        return;
+      }
+      
+      // Verificar se o ID da transação existe
+      if (!transactionId) {
+        Alert.alert('Erro', 'ID da transação não encontrado');
+        return;
+      }
+
       setSaving(true);
       
       const data = {
@@ -132,6 +147,12 @@ const EditTransaction = () => {
   };
 
   const handleDelete = () => {
+    // Verificar se o ID da transação existe
+    if (!transactionId) {
+      Alert.alert('Erro', 'ID da transação não encontrado');
+      return;
+    }
+    
     Alert.alert(
       'Confirmar Exclusão',
       'Tem certeza que deseja excluir esta transação? Esta ação não pode ser desfeita.',
@@ -155,6 +176,7 @@ const EditTransaction = () => {
     );
   };
 
+  // Manipulador para mudança de data
   const handleDateChange = (event: any, selectedDate?: Date) => {
     setShowDatePicker(false);
     if (selectedDate) {
@@ -162,25 +184,57 @@ const EditTransaction = () => {
     }
   };
 
-  const formatCurrency = (value: string) => {
-    // Remove caracteres não numéricos
-    let numericValue = value.replace(/[^0-9]/g, '');
-    
-    // Converte para número
-    const numeric = parseInt(numericValue) / 100;
-    
-    // Formata como moeda
-    return `R$ ${numeric.toFixed(2)}`;
-  };
-
-  if (loading) {
+  // Renderização quando houver erro
+  if (error) {
     return (
       <View style={[styles.container, { backgroundColor: colors.background }]}>
-        <ActivityIndicator size="large" color={colors.primary} />
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name={"arrow-back" as any} size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Editar Transação</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.errorContainer}>
+          <Ionicons name={"alert-circle-outline" as any} size={60} color={colors.danger} />
+          <Text style={[styles.errorText, { color: colors.danger }]}>{error}</Text>
+          <TouchableOpacity 
+            style={[styles.retryButton, { backgroundColor: colors.primary }]}
+            onPress={fetchTransaction}
+          >
+            <Text style={{ color: '#fff' }}>Tentar Novamente</Text>
+          </TouchableOpacity>
+          <TouchableOpacity 
+            style={[styles.backButton, { borderColor: colors.border }]}
+            onPress={() => navigation.goBack()}
+          >
+            <Text style={{ color: colors.text }}>Voltar</Text>
+          </TouchableOpacity>
+        </View>
       </View>
     );
   }
 
+  // Renderização durante o carregamento
+  if (loading) {
+    return (
+      <View style={[styles.container, { backgroundColor: colors.background }]}>
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => navigation.goBack()}>
+            <Ionicons name={"arrow-back" as any} size={24} color={colors.text} />
+          </TouchableOpacity>
+          <Text style={[styles.headerTitle, { color: colors.text }]}>Editar Transação</Text>
+          <View style={{ width: 24 }} />
+        </View>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+          <Text style={[styles.loadingText, { color: colors.text }]}>Carregando dados...</Text>
+        </View>
+      </View>
+    );
+  }
+
+  // Renderização principal
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <View style={styles.header}>
@@ -252,17 +306,26 @@ const EditTransaction = () => {
         
         <View style={[styles.inputContainer, { borderColor: colors.border }]}>
           <Text style={[styles.inputLabel, { color: colors.textSecondary }]}>Categoria</Text>
-          <View style={[styles.pickerContainer, { backgroundColor: colors.card }]}>
-            <Picker
-              selectedValue={category}
-              onValueChange={(itemValue) => setCategory(itemValue)}
-              style={{ color: colors.text }}
-            >
-              <Picker.Item label="Selecione uma categoria" value="" />
-              {(type === 'income' ? incomeCategories : expenseCategories).map((cat, index) => (
-                <Picker.Item key={index} label={cat} value={cat} />
-              ))}
-            </Picker>
+          <View style={styles.categorySelector}>
+            {(type === 'income' ? incomeCategories : expenseCategories).map((cat, index) => (
+              <TouchableOpacity
+                key={index}
+                style={[
+                  styles.categoryButton,
+                  category === cat && { backgroundColor: colors.primary },
+                  { borderColor: colors.border }
+                ]}
+                onPress={() => setCategory(cat)}
+              >
+                <Text 
+                  style={{ 
+                    color: category === cat ? '#fff' : colors.text,
+                  }}
+                >
+                  {cat}
+                </Text>
+              </TouchableOpacity>
+            ))}
           </View>
         </View>
         
@@ -347,6 +410,41 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: 'bold',
   },
+  // Container para estados de erro e carregamento
+  errorContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: 20,
+  },
+  errorText: {
+    fontSize: 16,
+    textAlign: 'center',
+    marginTop: 16,
+    marginBottom: 24,
+  },
+  retryButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    marginBottom: 12,
+  },
+  backButton: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    marginTop: 16,
+    fontSize: 16,
+  },
+  // Conteúdo principal
   content: {
     flex: 1,
   },
@@ -384,9 +482,18 @@ const styles = StyleSheet.create({
     fontSize: 16,
     padding: 0,
   },
-  pickerContainer: {
-    borderRadius: 8,
-    overflow: 'hidden',
+  // Seletor de categorias em forma de botões
+  categorySelector: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -5,
+  },
+  categoryButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+    margin: 5,
+    borderWidth: 1,
   },
   dateInput: {
     flexDirection: 'row',
