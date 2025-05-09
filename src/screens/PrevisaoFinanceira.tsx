@@ -1,5 +1,5 @@
 // src/screens/PrevisaoFinanceira.tsx
-import React, { useState, useEffect, ReactNode } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View, 
   Text, 
@@ -7,81 +7,35 @@ import {
   TouchableOpacity, 
   ScrollView,
   Alert,
-  ActivityIndicator,
-  Modal,
-  TextInput
+  ActivityIndicator
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { Ionicons } from '@expo/vector-icons';
 import { useTheme } from '../context/ThemeContext';
 import api from '../services/api';
 
-// Importação condicional para evitar crashes
-let LineChart, BarChart;
-try {
-  const ChartKit = require('react-native-chart-kit');
-  LineChart = ChartKit.LineChart;
-  BarChart = ChartKit.BarChart;
-} catch (error) {
-  console.error("Erro ao carregar componentes de gráfico:", error);
-  // Componentes de fallback que apenas exibem texto
-  LineChart = ({ data, ...props }: { data: any, [key: string]: any }) => (
-    <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Gráfico de linha não disponível</Text>
-    </View>
-  );
-
-  BarChart = ({ data, ...props }: { data: any, [key: string]: any }) => (
-    <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
-      <Text>Gráfico de barras não disponível</Text>
-    </View>
-  );
-}
-
-import { Dimensions } from 'react-native';
-const screenWidth = Dimensions.get('window').width;
+// Versão ultra simplificada - sem qualquer biblioteca de gráficos
 
 interface PrevisaoItem {
-  adjustmentDescription: ReactNode;
   date: string;
   totalIncome: number;
   totalExpense: number;
   monthlyBalance: number;
   accumulatedBalance: number;
-  incomeBreakdown: { [key: string]: number };
-  expenseBreakdown: { [key: string]: number };
   fixedIncome: number;
   variableIncome: number;
   fixedExpense: number;
   variableExpense: number;
 }
 
-interface ManualAdjustment {
-  month: number;
-  year: number;
-  income: number;
-  expense: number;
-  description: string;
-}
-
 const PrevisaoFinanceira = () => {
   const navigation = useNavigation();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   
   const [forecast, setForecast] = useState<PrevisaoItem[]>([]);
   const [months, setMonths] = useState<number>(6);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<'balance' | 'income' | 'expense' | 'accumulated'>('balance');
-  const [chartType, setChartType] = useState<'line' | 'bar'>('line');
-  const [showModal, setShowModal] = useState(false);
-  const [selectedMonthIndex, setSelectedMonthIndex] = useState<number | null>(null);
-  const [manualAdjustments, setManualAdjustments] = useState<ManualAdjustment[]>([]);
-  
-  // Estado para ajustes manuais temporários
-  const [adjustIncome, setAdjustIncome] = useState('');
-  const [adjustExpense, setAdjustExpense] = useState('');
-  const [adjustDescription, setAdjustDescription] = useState('');
 
   useEffect(() => {
     fetchForecast();
@@ -111,356 +65,6 @@ const PrevisaoFinanceira = () => {
 
   const formatCurrency = (value: number) => {
     return `R$ ${value.toFixed(2)}`;
-  };
-
-  const applyManualAdjustments = (originalForecast: PrevisaoItem[]): PrevisaoItem[] => {
-    if (manualAdjustments.length === 0) return originalForecast;
-    
-    try {
-      return originalForecast.map((item, index) => {
-        const date = new Date(item.date);
-        const month = date.getMonth();
-        const year = date.getFullYear();
-        
-        const adjustment = manualAdjustments.find(
-          adj => adj.month === month && adj.year === year
-        );
-        
-        if (adjustment) {
-          const newTotalIncome = item.totalIncome + adjustment.income;
-          const newTotalExpense = item.totalExpense + adjustment.expense;
-          const newMonthlyBalance = newTotalIncome - newTotalExpense;
-          
-          // Recalcular os saldos acumulados a partir deste mês
-          let newAccumulatedBalance = index === 0 
-            ? newMonthlyBalance 
-            : originalForecast[index - 1].accumulatedBalance + newMonthlyBalance;
-          
-          return {
-            ...item,
-            totalIncome: newTotalIncome,
-            totalExpense: newTotalExpense,
-            monthlyBalance: newMonthlyBalance,
-            accumulatedBalance: newAccumulatedBalance,
-            // Incluir informação sobre o ajuste
-            adjustmentDescription: adjustment.description
-          };
-        }
-        
-        // Se não houver ajuste, recalcular o saldo acumulado se necessário
-        if (index > 0 && manualAdjustments.some(
-          adj => {
-            const prevDate = new Date(originalForecast[index - 1].date);
-            return adj.month === prevDate.getMonth() && adj.year === prevDate.getFullYear();
-          }
-        )) {
-          return {
-            ...item,
-            accumulatedBalance: originalForecast[index - 1].accumulatedBalance + item.monthlyBalance
-          };
-        }
-        
-        return item;
-      });
-    } catch (e) {
-      console.error("Erro ao aplicar ajustes:", e);
-      return originalForecast;
-    }
-  };
-
-  const getAdjustedForecast = () => {
-    try {
-      return applyManualAdjustments(forecast);
-    } catch (e) {
-      console.error("Erro ao obter previsão ajustada:", e);
-      return forecast;
-    }
-  };
-
-  const handleAddAdjustment = () => {
-    if (selectedMonthIndex === null) return;
-    
-    try {
-      const parsedIncome = parseFloat(adjustIncome) || 0;
-      const parsedExpense = parseFloat(adjustExpense) || 0;
-      
-      if (parsedIncome === 0 && parsedExpense === 0) {
-        Alert.alert('Aviso', 'Por favor, insira pelo menos um valor diferente de zero.');
-        return;
-      }
-      
-      const selectedMonth = forecast[selectedMonthIndex];
-      const date = new Date(selectedMonth.date);
-      
-      const newAdjustment: ManualAdjustment = {
-        month: date.getMonth(),
-        year: date.getFullYear(),
-        income: parsedIncome,
-        expense: parsedExpense,
-        description: adjustDescription || `Ajuste manual`
-      };
-      
-      // Verificar se já existe um ajuste para este mês e substituir
-      const existingIndex = manualAdjustments.findIndex(
-        adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
-      );
-      
-      if (existingIndex >= 0) {
-        const updatedAdjustments = [...manualAdjustments];
-        updatedAdjustments[existingIndex] = newAdjustment;
-        setManualAdjustments(updatedAdjustments);
-      } else {
-        setManualAdjustments([...manualAdjustments, newAdjustment]);
-      }
-      
-      // Limpar campos e fechar modal
-      setAdjustIncome('');
-      setAdjustExpense('');
-      setAdjustDescription('');
-      setShowModal(false);
-    } catch (e) {
-      console.error("Erro ao adicionar ajuste:", e);
-      Alert.alert('Erro', 'Ocorreu um erro ao adicionar o ajuste.');
-    }
-  };
-
-  const getChartData = () => {
-    try {
-      const adjustedForecast = getAdjustedForecast();
-      if (!adjustedForecast.length) return { labels: [], datasets: [{ data: [0] }] };
-      
-      const labels = adjustedForecast.map(item => {
-        const date = new Date(item.date);
-        const monthNames = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
-        return `${monthNames[date.getMonth()]}`;
-      });
-      
-      let data: number[] = [];
-      
-      switch (activeTab) {
-        case 'balance':
-          data = adjustedForecast.map(item => item.monthlyBalance);
-          break;
-        case 'income':
-          data = adjustedForecast.map(item => item.totalIncome);
-          break;
-        case 'expense':
-          data = adjustedForecast.map(item => item.totalExpense);
-          break;
-        case 'accumulated':
-          data = adjustedForecast.map(item => item.accumulatedBalance);
-          break;
-      }
-      
-      return {
-        labels,
-        datasets: [
-          {
-            data: data.length ? data : [0],
-            color: (opacity = 1) => {
-              if (activeTab === 'balance' || activeTab === 'accumulated') {
-                return data[data.length - 1] >= 0 ? colors.success : colors.danger;
-              }
-              return activeTab === 'income' ? colors.success : colors.danger;
-            },
-            strokeWidth: 2
-          }
-        ],
-        legend: [
-          `${
-            activeTab === 'balance' ? 'Saldo Mensal' : 
-            activeTab === 'income' ? 'Receitas' : 
-            activeTab === 'expense' ? 'Despesas' : 
-            'Saldo Acumulado'
-          }`
-        ]
-      };
-    } catch (e) {
-      console.error("Erro ao obter dados do gráfico:", e);
-      return { labels: [], datasets: [{ data: [0] }] };
-    }
-  };
-
-  const renderChart = () => {
-    try {
-      const chartData = getChartData();
-      
-      const chartConfig = {
-        backgroundColor: colors.card,
-        backgroundGradientFrom: colors.card,
-        backgroundGradientTo: colors.card,
-        decimalPlaces: 0,
-        color: (opacity = 1) => isDark ? '#fff' : '#333',
-        labelColor: (opacity = 1) => colors.text,
-        style: {
-          borderRadius: 16,
-        },
-        propsForDots: {
-          r: '6',
-          strokeWidth: '2',
-          stroke: activeTab === 'income' ? colors.success : 
-                  activeTab === 'expense' ? colors.danger : colors.primary
-        },
-      };
-      
-      const chartStyle = {
-        marginVertical: 8,
-        borderRadius: 16,
-      };
-      
-      if (chartType === 'line' && LineChart) {
-        return (
-          <LineChart
-            data={chartData}
-            width={screenWidth - 40}
-            height={220}
-            chartConfig={chartConfig}
-            bezier
-            style={chartStyle}
-          />
-        );
-      } else if (chartType === 'bar' && BarChart) {
-        return (
-          <BarChart
-            data={chartData}
-            width={screenWidth - 40}
-            height={220}
-            chartConfig={chartConfig}
-            style={chartStyle}
-            fromZero
-            yAxisLabel={''}
-            yAxisSuffix={''}
-          />
-        );
-      } else {
-        return (
-          <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
-            <Text style={{ color: colors.text }}>Gráfico não disponível</Text>
-          </View>
-        );
-      }
-    } catch (e) {
-      console.error("Erro ao renderizar gráfico:", e);
-      return (
-        <View style={{ height: 220, justifyContent: 'center', alignItems: 'center' }}>
-          <Text style={{ color: colors.text }}>Erro ao carregar gráfico</Text>
-        </View>
-      );
-    }
-  };
-
-  const getBreakdownData = (item: PrevisaoItem, type: 'income' | 'expense') => {
-    try {
-      const breakdown = type === 'income' ? item.incomeBreakdown : item.expenseBreakdown;
-      return Object.entries(breakdown)
-        .sort((a, b) => b[1] - a[1]) // Ordenar por valor decrescente
-        .map(([category, value]) => ({
-          category,
-          value,
-          percentage: (value / (type === 'income' ? item.totalIncome : item.totalExpense)) * 100
-        }));
-    } catch (e) {
-      console.error("Erro ao obter dados de breakdown:", e);
-      return [];
-    }
-  };
-
-  const renderAdjustmentModal = () => {
-    if (selectedMonthIndex === null || !forecast[selectedMonthIndex]) return null;
-    
-    try {
-      const selectedMonth = forecast[selectedMonthIndex];
-      const date = new Date(selectedMonth.date);
-      const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
-                         'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-      
-      // Verificar se já existe um ajuste para este mês
-      const existingAdjustment = manualAdjustments.find(
-        adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
-      );
-      
-      return (
-        <Modal
-          visible={showModal}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowModal(false)}
-        >
-          <View style={styles.modalOverlay}>
-            <View style={[styles.modalContent, { backgroundColor: colors.card }]}>
-              <Text style={[styles.modalTitle, { color: colors.text }]}>
-                Ajustar {monthNames[date.getMonth()]} {date.getFullYear()}
-              </Text>
-              
-              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-                Ajuste de Receita (+ ou -)
-              </Text>
-              <View style={[styles.modalInputContainer, { borderColor: colors.border }]}>
-                <Text style={{ color: colors.textSecondary }}>R$</Text>
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text }]}
-                  value={adjustIncome}
-                  onChangeText={setAdjustIncome}
-                  keyboardType="numeric"
-                  placeholder="0,00"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-              
-              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-                Ajuste de Despesa (+ ou -)
-              </Text>
-              <View style={[styles.modalInputContainer, { borderColor: colors.border }]}>
-                <Text style={{ color: colors.textSecondary }}>R$</Text>
-                <TextInput
-                  style={[styles.modalInput, { color: colors.text }]}
-                  value={adjustExpense}
-                  onChangeText={setAdjustExpense}
-                  keyboardType="numeric"
-                  placeholder="0,00"
-                  placeholderTextColor={colors.textSecondary}
-                />
-              </View>
-              
-              <Text style={[styles.modalLabel, { color: colors.textSecondary }]}>
-                Descrição do Ajuste
-              </Text>
-              <TextInput
-                style={[styles.modalDescription, { color: colors.text, borderColor: colors.border }]}
-                value={adjustDescription}
-                onChangeText={setAdjustDescription}
-                placeholder="Ex: Bônus esperado, Viagem planejada..."
-                placeholderTextColor={colors.textSecondary}
-                multiline
-              />
-              
-              <View style={styles.modalButtons}>
-                <TouchableOpacity 
-                  style={[styles.modalButton, { borderColor: colors.border }]} 
-                  onPress={() => {
-                    setAdjustIncome('');
-                    setAdjustExpense('');
-                    setAdjustDescription('');
-                    setShowModal(false);
-                  }}
-                >
-                  <Text style={{ color: colors.text }}>Cancelar</Text>
-                </TouchableOpacity>
-                <TouchableOpacity 
-                  style={[styles.modalButton, { backgroundColor: colors.primary }]} 
-                  onPress={handleAddAdjustment}
-                >
-                  <Text style={{ color: '#fff' }}>Salvar</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          </View>
-        </Modal>
-      );
-    } catch (e) {
-      console.error("Erro ao renderizar modal de ajuste:", e);
-      return null;
-    }
   };
 
   return (
@@ -509,96 +113,6 @@ const PrevisaoFinanceira = () => {
         </TouchableOpacity>
       </View>
 
-      <View style={styles.chartTabs}>
-        <TouchableOpacity 
-          style={[
-            styles.chartTab, 
-            activeTab === 'balance' && { ...styles.activeTab, backgroundColor: colors.primary + '20' }
-          ]}
-          onPress={() => setActiveTab('balance')}
-        >
-          <Text style={[
-            styles.chartTabText, 
-            { color: activeTab === 'balance' ? colors.primary : colors.textSecondary }
-          ]}>Mensal</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[
-            styles.chartTab, 
-            activeTab === 'accumulated' && { ...styles.activeTab, backgroundColor: colors.primary + '20' }
-          ]}
-          onPress={() => setActiveTab('accumulated')}
-        >
-          <Text style={[
-            styles.chartTabText, 
-            { color: activeTab === 'accumulated' ? colors.primary : colors.textSecondary }
-          ]}>Acumulado</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[
-            styles.chartTab, 
-            activeTab === 'income' && { ...styles.activeTab, backgroundColor: colors.primary + '20' }
-          ]}
-          onPress={() => setActiveTab('income')}
-        >
-          <Text style={[
-            styles.chartTabText, 
-            { color: activeTab === 'income' ? colors.success : colors.textSecondary }
-          ]}>Receitas</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[
-            styles.chartTab, 
-            activeTab === 'expense' && { ...styles.activeTab, backgroundColor: colors.primary + '20' }
-          ]}
-          onPress={() => setActiveTab('expense')}
-        >
-          <Text style={[
-            styles.chartTabText, 
-            { color: activeTab === 'expense' ? colors.danger : colors.textSecondary }
-          ]}>Despesas</Text>
-        </TouchableOpacity>
-      </View>
-
-      <View style={styles.chartTypeSelector}>
-        <TouchableOpacity 
-          style={[
-            styles.chartTypeButton, 
-            chartType === 'line' && { backgroundColor: colors.primary }
-          ]}
-          onPress={() => setChartType('line')}
-        >
-          <Ionicons 
-            name={"analytics-outline" as any} 
-            size={16} 
-            color={chartType === 'line' ? '#fff' : colors.textSecondary} 
-          />
-          <Text style={{ 
-            color: chartType === 'line' ? '#fff' : colors.textSecondary,
-            marginLeft: 5,
-            fontSize: 12
-          }}>Linha</Text>
-        </TouchableOpacity>
-        <TouchableOpacity 
-          style={[
-            styles.chartTypeButton, 
-            chartType === 'bar' && { backgroundColor: colors.primary }
-          ]}
-          onPress={() => setChartType('bar')}
-        >
-          <Ionicons 
-            name={"bar-chart-outline" as any} 
-            size={16} 
-            color={chartType === 'bar' ? '#fff' : colors.textSecondary} 
-          />
-          <Text style={{ 
-            color: chartType === 'bar' ? '#fff' : colors.textSecondary,
-            marginLeft: 5,
-            fontSize: 12
-          }}>Barra</Text>
-        </TouchableOpacity>
-      </View>
-
       {loading ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={colors.primary} />
@@ -626,9 +140,11 @@ const PrevisaoFinanceira = () => {
           </Text>
         </View>
       ) : (
-        <ScrollView>
-          <View style={styles.chartContainer}>
-            {renderChart()}
+        <ScrollView style={styles.content}>
+          <View style={styles.infoBox}>
+            <Text style={[styles.infoText, { color: colors.text }]}>
+              Versão simplificada da previsão financeira sem gráficos - apenas dados
+            </Text>
           </View>
 
           <View style={[styles.forecastListContainer, { backgroundColor: colors.background }]}>
@@ -636,16 +152,11 @@ const PrevisaoFinanceira = () => {
               Análise Mensal Detalhada
             </Text>
             
-            {getAdjustedForecast().map((item, index) => {
+            {forecast.map((item, index) => {
               try {
                 const date = new Date(item.date);
                 const monthNames = ['Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho', 
-                                    'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
-                
-                // Verificar se há ajuste manual para este mês
-                const hasAdjustment = manualAdjustments.some(
-                  adj => adj.month === date.getMonth() && adj.year === date.getFullYear()
-                );
+                                  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro'];
                 
                 return (
                   <View 
@@ -656,41 +167,9 @@ const PrevisaoFinanceira = () => {
                       index === forecast.length - 1 && { marginBottom: 20 }
                     ]}
                   >
-                    <View style={styles.forecastMonthHeader}>
-                      <Text style={[styles.forecastMonth, { color: colors.text }]}>
-                        {monthNames[date.getMonth()]} {date.getFullYear()}
-                      </Text>
-                      
-                      <TouchableOpacity
-                        style={[styles.adjustButton, { backgroundColor: hasAdjustment ? colors.primary + '40' : 'transparent' }]}
-                        onPress={() => {
-                          setSelectedMonthIndex(index);
-                          setShowModal(true);
-                        }}
-                      >
-                        <Ionicons 
-                          name={"pencil" as any} 
-                          size={16} 
-                          color={hasAdjustment ? colors.primary : colors.textSecondary} 
-                        />
-                        <Text style={{ 
-                          color: hasAdjustment ? colors.primary : colors.textSecondary,
-                          fontSize: 12,
-                          marginLeft: 5
-                        }}>
-                          {hasAdjustment ? 'Ajustado' : 'Ajustar'}
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                    
-                    {item.adjustmentDescription && (
-                      <View style={[styles.adjustmentNote, { backgroundColor: colors.primary + '20' }]}>
-                        <Text style={{ color: colors.primary, fontSize: 12 }}>
-                          <Ionicons name={"information-circle" as any} size={12} color={colors.primary} /> 
-                          {' '}Ajuste: {item.adjustmentDescription}
-                        </Text>
-                      </View>
-                    )}
+                    <Text style={[styles.forecastMonth, { color: colors.text }]}>
+                      {monthNames[date.getMonth()]} {date.getFullYear()}
+                    </Text>
                     
                     <View style={styles.forecastOverview}>
                       <View style={styles.forecastStat}>
@@ -735,9 +214,6 @@ const PrevisaoFinanceira = () => {
                           <Text style={[styles.fixedVsVariableValue, { color: colors.success }]}>
                             {formatCurrency(item.fixedIncome)}
                           </Text>
-                          <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
-                            {(item.fixedIncome / (item.totalIncome || 1) * 100).toFixed(0)}%
-                          </Text>
                         </View>
 
                         <View style={styles.fixedVsVariableColumn}>
@@ -746,9 +222,6 @@ const PrevisaoFinanceira = () => {
                           </Text>
                           <Text style={[styles.fixedVsVariableValue, { color: colors.success }]}>
                             {formatCurrency(item.variableIncome)}
-                          </Text>
-                          <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
-                            {(item.variableIncome / (item.totalIncome || 1) * 100).toFixed(0)}%
                           </Text>
                         </View>
 
@@ -759,9 +232,6 @@ const PrevisaoFinanceira = () => {
                           <Text style={[styles.fixedVsVariableValue, { color: colors.danger }]}>
                             {formatCurrency(item.fixedExpense)}
                           </Text>
-                          <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
-                            {(item.fixedExpense / (item.totalExpense || 1) * 100).toFixed(0)}%
-                          </Text>
                         </View>
 
                         <View style={styles.fixedVsVariableColumn}>
@@ -771,88 +241,7 @@ const PrevisaoFinanceira = () => {
                           <Text style={[styles.fixedVsVariableValue, { color: colors.danger }]}>
                             {formatCurrency(item.variableExpense)}
                           </Text>
-                          <Text style={[styles.fixedVsVariablePercentage, { color: colors.textSecondary }]}>
-                            {(item.variableExpense / (item.totalExpense || 1) * 100).toFixed(0)}%
-                          </Text>
                         </View>
-                      </View>
-                    </View>
-                    
-                    <View style={styles.breakdownContainer}>
-                      <View style={styles.breakdownSection}>
-                        <Text style={[styles.breakdownTitle, { color: colors.text }]}>
-                          Principais Receitas
-                        </Text>
-                        {getBreakdownData(item, 'income').slice(0, 3).length > 0 ? (
-                          getBreakdownData(item, 'income').slice(0, 3).map((breakdown, idx) => (
-                            <View key={idx} style={styles.breakdownItem}>
-                              <View style={styles.breakdownCategory}>
-                                <Text style={[styles.breakdownCategoryText, { color: colors.text }]} numberOfLines={1}>
-                                  {breakdown.category}
-                                </Text>
-                                <Text style={[styles.breakdownPercentage, { color: colors.textSecondary }]}>
-                                  {breakdown.percentage.toFixed(0)}%
-                                </Text>
-                              </View>
-                              <View style={styles.breakdownBarContainer}>
-                                <View 
-                                  style={[
-                                    styles.breakdownBar, 
-                                    { 
-                                      width: `${breakdown.percentage}%`, 
-                                      backgroundColor: colors.success 
-                                    }
-                                  ]} 
-                                />
-                              </View>
-                              <Text style={[styles.breakdownValue, { color: colors.success }]}>
-                                {formatCurrency(breakdown.value)}
-                              </Text>
-                            </View>
-                          ))
-                        ) : (
-                          <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
-                            Sem dados de receitas
-                          </Text>
-                        )}
-                      </View>
-                      
-                      <View style={styles.breakdownSection}>
-                        <Text style={[styles.breakdownTitle, { color: colors.text }]}>
-                          Principais Despesas
-                        </Text>
-                        {getBreakdownData(item, 'expense').slice(0, 3).length > 0 ? (
-                          getBreakdownData(item, 'expense').slice(0, 3).map((breakdown, idx) => (
-                            <View key={idx} style={styles.breakdownItem}>
-                              <View style={styles.breakdownCategory}>
-                                <Text style={[styles.breakdownCategoryText, { color: colors.text }]} numberOfLines={1}>
-                                  {breakdown.category}
-                                </Text>
-                                <Text style={[styles.breakdownPercentage, { color: colors.textSecondary }]}>
-                                  {breakdown.percentage.toFixed(0)}%
-                                </Text>
-                              </View>
-                              <View style={styles.breakdownBarContainer}>
-                                <View 
-                                  style={[
-                                    styles.breakdownBar, 
-                                    { 
-                                      width: `${breakdown.percentage}%`, 
-                                      backgroundColor: colors.danger 
-                                    }
-                                  ]} 
-                                />
-                              </View>
-                              <Text style={[styles.breakdownValue, { color: colors.danger }]}>
-                                {formatCurrency(breakdown.value)}
-                              </Text>
-                            </View>
-                          ))
-                        ) : (
-                          <Text style={[styles.noDataText, { color: colors.textSecondary }]}>
-                            Sem dados de despesas
-                          </Text>
-                        )}
                       </View>
                     </View>
                     
@@ -880,8 +269,6 @@ const PrevisaoFinanceira = () => {
           </View>
         </ScrollView>
       )}
-      
-      {renderAdjustmentModal()}
     </View>
   );
 };
@@ -913,42 +300,6 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 20,
     marginHorizontal: 8,
-  },
-  chartTabs: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    paddingHorizontal: 20,
-    marginBottom: 8,
-  },
-  chartTab: {
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  activeTab: {
-    fontWeight: 'bold',
-  },
-  chartTabText: {
-    fontWeight: '600',
-    fontSize: 12,
-  },
-  chartTypeSelector: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    paddingHorizontal: 20,
-    marginBottom: 16,
-  },
-  chartTypeButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    marginHorizontal: 8,
-  },
-  chartContainer: {
-    alignItems: 'center',
-    marginBottom: 20,
   },
   loadingContainer: {
     flex: 1,
@@ -992,6 +343,20 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 8,
   },
+  content: {
+    flex: 1,
+  },
+  infoBox: {
+    margin: 20,
+    padding: 15,
+    borderRadius: 10,
+    backgroundColor: '#f0f0f0',
+    alignItems: 'center',
+  },
+  infoText: {
+    fontSize: 14,
+    textAlign: 'center',
+  },
   forecastListContainer: {
     paddingHorizontal: 20,
   },
@@ -1006,27 +371,10 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     borderWidth: 1,
   },
-  forecastMonthHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 8,
-  },
   forecastMonth: {
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  adjustButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-  },
-  adjustmentNote: {
-    borderRadius: 8,
-    padding: 8,
-    marginBottom: 12,
+    marginBottom: 10,
   },
   forecastOverview: {
     flexDirection: 'row',
@@ -1047,6 +395,11 @@ const styles = StyleSheet.create({
   fixedVsVariableContainer: {
     marginBottom: 16,
   },
+  breakdownTitle: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    marginBottom: 8,
+  },
   fixedVsVariableGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1065,57 +418,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: 'bold',
   },
-  fixedVsVariablePercentage: {
-    fontSize: 12,
-  },
-  breakdownContainer: {
-    marginBottom: 16,
-  },
-  breakdownSection: {
-    marginBottom: 16,
-  },
-  breakdownTitle: {
-    fontSize: 14,
-    fontWeight: 'bold',
-    marginBottom: 8,
-  },
-  breakdownItem: {
-    marginBottom: 8,
-  },
-  breakdownCategory: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 4,
-  },
-  breakdownCategoryText: {
-    fontSize: 12,
-    flex: 1,
-  },
-  breakdownPercentage: {
-    fontSize: 12,
-    marginLeft: 8,
-  },
-  breakdownBarContainer: {
-    height: 6,
-    backgroundColor: '#e0e0e0',
-    borderRadius: 3,
-    marginBottom: 4,
-    overflow: 'hidden',
-  },
-  breakdownBar: {
-    height: '100%',
-    borderRadius: 3,
-  },
-  breakdownValue: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    textAlign: 'right',
-  },
-  noDataText: {
-    fontSize: 12,
-    fontStyle: 'italic',
-    marginTop: 4,
-  },
   accumulatedContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -1131,67 +433,7 @@ const styles = StyleSheet.create({
   accumulatedValue: {
     fontSize: 18,
     fontWeight: 'bold',
-  },
-  modalOverlay: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: 'rgba(0,0,0,0.5)',
-  },
-  modalContent: {
-    width: '85%',
-    borderRadius: 12,
-    padding: 20,
-    elevation: 5,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    marginBottom: 16,
-    textAlign: 'center',
-  },
-  modalLabel: {
-    fontSize: 14,
-    marginBottom: 8,
-  },
-  modalInputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    marginBottom: 16,
-  },
-  modalInput: {
-    flex: 1,
-    paddingVertical: 10,
-    paddingLeft: 10,
-  },
-  modalDescription: {
-    borderWidth: 1,
-    borderRadius: 8,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    marginBottom: 20,
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  modalButtons: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  modalButton: {
-    flex: 1,
-    paddingVertical: 12,
-    alignItems: 'center',
-    borderRadius: 8,
-    borderWidth: 1,
-    marginHorizontal: 5,
-  },
+  }
 });
 
 export default PrevisaoFinanceira;
